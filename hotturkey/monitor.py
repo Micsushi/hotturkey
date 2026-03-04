@@ -15,8 +15,10 @@ from hotturkey.config import (
     TRACKED_SITES,
     MAX_PLAY_BUDGET_SECONDS,
     BUDGET_RECOVERY_PER_SECOND_IDLE,
+    DETECTION_POLL_INTERVAL_SECONDS,
 )
 from hotturkey.logger import log
+from hotturkey.state import load_extra_minutes_pending, save_extra_minutes_pending
 
 
 # --- Detection helpers ---
@@ -114,26 +116,52 @@ def consume_budget(state, elapsed_seconds):
 
 
 def recover_budget(state, elapsed_seconds):
-    """Add time back to budget while idle. Caps at the normal 1hr max,
-    unless extra time from the CLI has pushed the budget above that."""
-    cap = max(MAX_PLAY_BUDGET_SECONDS, state.remaining_budget_seconds)
+    """Add time back to budget while idle.
+    Recovery fills up to MAX_PLAY_BUDGET_SECONDS, but never reduces budgets
+    that are already above that (from extra time or set commands)."""
+    # If budget is already above the normal cap (because of extra time),
+    # don't change it during idle periods.
+    if state.remaining_budget_seconds >= MAX_PLAY_BUDGET_SECONDS:
+        return
+
+    cap = MAX_PLAY_BUDGET_SECONDS
     recovered = elapsed_seconds * BUDGET_RECOVERY_PER_SECOND_IDLE
     before = state.remaining_budget_seconds
     state.remaining_budget_seconds = min(cap, state.remaining_budget_seconds + recovered)
     gained = state.remaining_budget_seconds - before
-    if gained > 0.01:
+    # Only log when something actually changed, to avoid noisy "+0.0s" entries,
+    # e.g. on startup when virtually no time has elapsed.
+    if gained > 0:
         log.info(f"[BUDGET] +{gained:.1f}s recovered, {state.remaining_budget_seconds:.0f}s remaining")
 
 
 def apply_pending_extra_time(state):
-    """Check if the user ran 'hotturkey extra X' and pick up the extra minutes.
-    Converts minutes to seconds and adds them to the budget."""
-    if state.extra_minutes_pending_from_cli > 0:
-        extra_seconds = state.extra_minutes_pending_from_cli * 60
-        state.remaining_budget_seconds += extra_seconds
-        log.info(f"[EXTRA] +{state.extra_minutes_pending_from_cli:.0f}min added, "
-                 f"{state.remaining_budget_seconds:.0f}s remaining")
-        state.extra_minutes_pending_from_cli = 0.0
+    """Check if the user ran 'hotturkey extra X' and pick up the change.
+    Positive = add time, negative = deduct. Budget never goes below 0.
+
+    Pending minutes are stored in a small sidecar file so CLI commands work
+    whether the monitor is currently running or not.
+    """
+    pending_minutes = load_extra_minutes_pending()
+    if pending_minutes == 0:
+        return
+
+    extra_seconds = pending_minutes * 60
+    state.remaining_budget_seconds = max(0.0, state.remaining_budget_seconds + extra_seconds)
+
+    if pending_minutes > 0:
+        log.info(
+            f"[EXTRA] +{pending_minutes:.1f}min added, "
+            f"{state.remaining_budget_seconds:.0f}s remaining"
+        )
+    else:
+        log.info(
+            f"[EXTRA] {pending_minutes:.1f}min deducted, "
+            f"{state.remaining_budget_seconds:.0f}s remaining"
+        )
+
+    # Clear the pending value so we don't apply it again on the next poll
+    save_extra_minutes_pending(0.0)
 
 
 # --- Main update function ---
@@ -147,6 +175,16 @@ def update_budget(state):
     5. If idle: end session, recover budget"""
     now = time.time()
     elapsed_seconds = now - state.last_poll_timestamp
+
+    # Snap elapsed time to neat multiples of the poll interval so logs show
+    # clean 5.0s consumed / 2.5s recovered instead of 5.1 / 1.9 due to jitter.
+    if elapsed_seconds > 0 and DETECTION_POLL_INTERVAL_SECONDS > 0:
+        elapsed_seconds = round(
+            elapsed_seconds / DETECTION_POLL_INTERVAL_SECONDS
+        ) * DETECTION_POLL_INTERVAL_SECONDS
+        if elapsed_seconds < 0:
+            elapsed_seconds = 0.0
+
     state.last_poll_timestamp = now
 
     apply_pending_extra_time(state)

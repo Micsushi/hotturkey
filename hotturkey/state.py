@@ -90,3 +90,28 @@ def save_state(state):
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump(state.to_dict(), f, indent=2)
+
+
+# --- Extra-time helpers for CLI <-> monitor coordination ---
+
+EXTRA_FILE = os.path.join(STATE_DIR, "extra.json")
+
+
+def load_extra_minutes_pending():
+    """Return minutes of extra time requested via the CLI but not yet applied.
+    Stored separately from state.json so CLI can work whether the app is running or not."""
+    if not os.path.exists(EXTRA_FILE):
+        return 0.0
+    try:
+        with open(EXTRA_FILE, "r") as f:
+            data = json.load(f)
+        return float(data.get("extra_minutes_pending_from_cli", 0.0))
+    except (json.JSONDecodeError, IOError, ValueError):
+        return 0.0
+
+
+def save_extra_minutes_pending(minutes):
+    """Persist pending extra minutes so the running app (or next run) can pick them up."""
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(EXTRA_FILE, "w") as f:
+        json.dump({"extra_minutes_pending_from_cli": float(minutes)}, f, indent=2)

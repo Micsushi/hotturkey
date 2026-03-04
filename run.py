@@ -9,6 +9,10 @@ import sys
 import threading
 import time
 
+import win32api
+import win32event
+import winerror
+
 from hotturkey.config import DETECTION_POLL_INTERVAL_SECONDS
 from hotturkey.state import load_state, save_state
 from hotturkey.monitor import update_budget
@@ -19,6 +23,11 @@ from hotturkey.logger import log
 
 # Flag to tell threads to stop
 _running = True
+
+# Handle to a system-wide mutex so only one instance of the background
+# HotTurkey process runs at a time.
+_single_instance_mutex = None
+_MUTEX_NAME = "HotTurkeySingleton"
 
 
 def monitor_loop():
@@ -50,7 +59,17 @@ def monitor_loop():
 
 
 def main():
-    global _running
+    global _running, _single_instance_mutex
+
+    # Acquire a system-wide mutex so a second background instance exits
+    # immediately instead of running two monitors/tray icons at once.
+    _single_instance_mutex = win32event.CreateMutex(None, False, _MUTEX_NAME)
+    last_error = win32api.GetLastError()
+    if last_error == winerror.ERROR_ALREADY_EXISTS:
+        log.info("[START] HotTurkey is already running, exiting this instance.")
+        return
+
+    log.info("============================================================")
     log.info("[START] HotTurkey starting...")
 
     def on_quit():
@@ -96,7 +115,7 @@ if __name__ == "__main__":
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        print("HotTurkey started in background. You can close this terminal.")
+        print("HotTurkey started (or is already running) in background. You can close this terminal.")
         print("Right-click the tray icon for Status, Show logs, or Quit.")
         sys.exit(0)
 

@@ -8,31 +8,42 @@ import os
 
 from hotturkey.config import STATE_DIR, LOG_FILE
 
-# ANSI color codes for terminal output
-COLORS = {
-    "[GAMING]":  "\033[95m",   # magenta
-    "[WATCHING]": "\033[96m",  # cyan
-    "[SESSION]": "\033[93m",   # yellow
-    "[BUDGET]":  "\033[92m",   # green
-    "[EXTRA]":   "\033[94m",   # blue
-    "[POPUP]":   "\033[91m",   # red
-    "[START]":   "\033[97m",   # white
-    "[STOP]":    "\033[97m",   # white
-    "[TRAY]":    "\033[90m",   # gray
-    "[IDLE]":    "\033[90m",   # gray
-}
+# Simplified ANSI colors:
+# - Green for budget recovery
+# - Red for budget consumption
+# - Cyan for everything else
+GREEN = "\033[92m"
+RED = "\033[91m"
+CYAN = "\033[96m"
 RESET = "\033[0m"
 
 
 class ColorFormatter(logging.Formatter):
-    """Adds ANSI colors to console log lines based on the tag (e.g. [GAMING], [BUDGET])."""
+    """Adds ANSI colors to console log lines:
+    - [BUDGET] with '-' => red (consumed)
+    - [BUDGET] with '+' => green (recovered)
+    - everything else    => cyan
+    """
 
     def format(self, record):
+        # Decide color based on the raw log message (without timestamp) so
+        # date dashes like "2026-03-04" don't trick us into thinking it's a
+        # budget consumption.
+        base_message = record.getMessage()
+        color = None
+        if "[BUDGET]" in base_message:
+            if "+" in base_message:
+                color = GREEN
+            elif "-" in base_message:
+                color = RED
+
         message = super().format(record)
-        for tag, color in COLORS.items():
-            if tag in message:
-                return f"{color}{message}{RESET}"
-        return message
+
+        if color is None:
+            # All non-budget logs: cyan
+            return f"{CYAN}{message}{RESET}"
+
+        return f"{color}{message}{RESET}"
 
 
 class FlushingFileHandler(logging.FileHandler):
@@ -61,9 +72,9 @@ def setup_logger():
         console_handler.setFormatter(ColorFormatter(base_format, datefmt=datefmt))
         logger.addHandler(console_handler)
 
-    # File always, with flush so Show logs tail works
+    # File with colors so Show logs (PowerShell tail) displays them
     file_handler = FlushingFileHandler(LOG_FILE)
-    file_handler.setFormatter(logging.Formatter(base_format, datefmt=datefmt))
+    file_handler.setFormatter(ColorFormatter(base_format, datefmt=datefmt))
     logger.addHandler(file_handler)
 
     return logger

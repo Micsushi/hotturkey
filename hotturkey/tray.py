@@ -18,16 +18,26 @@ _quit_callback = None
 
 
 def _build_icon_image(budget_seconds):
-    """Draw a 64x64 colored circle. Color depends on how much budget is left:
-    green = plenty, yellow = getting low, orange = almost out, red = depleted."""
-    if budget_seconds <= 0:
-        color = "#DC2626"
-    elif budget_seconds < 600:
-        color = "#F97316"
-    elif budget_seconds < 1800:
-        color = "#EAB308"
+    """Draw a 64x64 colored circle.
+    Color depends on the *percentage* of budget left so it behaves consistently
+    even when MAX_PLAY_BUDGET_SECONDS is changed for testing:
+      - green  : > 50% remaining
+      - yellow : 25–50% remaining
+      - orange : 0–25% remaining
+      - red    : 0 or below"""
+    if MAX_PLAY_BUDGET_SECONDS <= 0:
+        ratio = 0.0
     else:
-        color = "#22C55E"
+        ratio = max(0.0, min(1.0, budget_seconds / float(MAX_PLAY_BUDGET_SECONDS)))
+
+    if ratio <= 0.0:
+        color = "#DC2626"  # red
+    elif ratio < 0.25:
+        color = "#F97316"  # orange
+    elif ratio < 0.5:
+        color = "#EAB308"  # yellow
+    else:
+        color = "#22C55E"  # green
 
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)

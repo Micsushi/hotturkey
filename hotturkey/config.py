@@ -17,6 +17,7 @@ OVERTIME_MIN_INTERVAL_SECONDS = 15
 # works no matter where you run the program from.
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".hotturkey")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
+LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
 
 STEAM_PROCESS_NAME = "steam.exe"
 STEAM_HELPER_PROCESS_NAMES = {
@@ -32,4 +33,5 @@ STEAM_HELPER_PROCESS_NAMES = {
     "vrcompositor.exe",
 }
 
-YOUTUBE_BRAVE_WINDOW_KEYWORDS = ["youtube", "- brave"]
+TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
+TRACKED_SITES = ["youtube"]

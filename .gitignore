@@ -1,0 +1,14 @@
+.cursor/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.env
+.venv/
+env/
+venv/
+*.log
+.hotturkey/

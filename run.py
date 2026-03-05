@@ -14,8 +14,8 @@ import win32event
 import winerror
 
 from hotturkey.config import (
-    DETECTION_POLL_INTERVAL_SECONDS,
-    MAX_PLAY_BUDGET_SECONDS,
+    POLL_INTERVAL,
+    MAX_PLAY_BUDGET,
     STATE_DIR,
 )
 from hotturkey.state import load_state, save_state
@@ -64,7 +64,7 @@ def monitor_loop():
     state.last_poll_timestamp = time.time()
 
     remaining_str = _format_mmss(state.remaining_budget_seconds)
-    max_str = _format_mmss(MAX_PLAY_BUDGET_SECONDS)
+    max_str = _format_mmss(MAX_PLAY_BUDGET)
     # Show both remaining budget and any stored overtime debt on startup.
     overtime_seconds = getattr(state, "overtime_seconds", 0.0)
     overtime_str = _format_mmss(overtime_seconds)
@@ -72,7 +72,7 @@ def monitor_loop():
         log.info(f"[START] Budget: {remaining_str} / {max_str}, overtime debt: {overtime_str}")
     else:
         log.info(f"[START] Budget: {remaining_str} / {max_str}")
-    log.debug(f"[DEBUG] Poll interval: {DETECTION_POLL_INTERVAL_SECONDS}s")
+    log.debug(f"[DEBUG] Poll interval: {POLL_INTERVAL}s")
 
     while _running:
         loop_start = time.time()
@@ -103,7 +103,7 @@ def monitor_loop():
             f"total_body={ body_ms:.1f}ms"
         )
 
-        time.sleep(DETECTION_POLL_INTERVAL_SECONDS)
+        time.sleep(POLL_INTERVAL)
 
     save_state(state)
     log.info("[STOP] Monitor stopped, state saved.")

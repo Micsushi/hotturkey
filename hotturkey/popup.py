@@ -4,7 +4,7 @@ import subprocess
 import time
 
 from hotturkey.config import (
-    MAX_PLAY_BUDGET_SECONDS,
+    MAX_PLAY_BUDGET,
     OVERTIME_INTERVAL_DECAY_FACTOR,
     OVERTIME_MIN_INTERVAL_SECONDS,
 )
@@ -58,7 +58,7 @@ def check_and_trigger_popups(state):
     # configured minimum interval. For a 60 min budget, this is 30 min.
     base_interval = max(
         float(OVERTIME_MIN_INTERVAL_SECONDS),
-        0.5 * float(MAX_PLAY_BUDGET_SECONDS),
+        0.5 * float(MAX_PLAY_BUDGET),
     )
 
     # Determine which overtime "level" we're currently in:

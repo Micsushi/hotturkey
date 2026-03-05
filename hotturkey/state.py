@@ -5,7 +5,7 @@ import json
 import os
 import time
 
-from hotturkey.config import STATE_DIR, STATE_FILE, MAX_PLAY_BUDGET_SECONDS
+from hotturkey.config import STATE_DIR, STATE_FILE, MAX_PLAY_BUDGET
 
 
 class AppState:
@@ -13,7 +13,7 @@ class AppState:
 
     def __init__(self):
         # How many seconds of play time are left
-        self.remaining_budget_seconds = float(MAX_PLAY_BUDGET_SECONDS)
+        self.remaining_budget_seconds = float(MAX_PLAY_BUDGET)
 
         # How many seconds have been spent *after* the budget hit 0.
         # This is tracked separately so we can show "overtime used" and
@@ -68,7 +68,7 @@ class AppState:
     def from_dict(self, data):
         """Restore this object's fields from a dictionary (loaded from JSON).
         Uses defaults if any key is missing, so old state files still work."""
-        self.remaining_budget_seconds = data.get("remaining_budget_seconds", float(MAX_PLAY_BUDGET_SECONDS))
+        self.remaining_budget_seconds = data.get("remaining_budget_seconds", float(MAX_PLAY_BUDGET))
         self.overtime_seconds = data.get("overtime_seconds", 0.0)
         self.last_poll_timestamp = data.get("last_poll_timestamp", time.time())
         self.is_tracked_activity_running = data.get("is_tracked_activity_running", False)

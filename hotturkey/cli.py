@@ -7,7 +7,7 @@
 import argparse
 import sys
 
-from hotturkey.config import MAX_PLAY_BUDGET_SECONDS
+from hotturkey.config import MAX_PLAY_BUDGET
 from hotturkey.state import (
     load_state,
     load_extra_minutes_pending,
@@ -31,7 +31,7 @@ def handle_status():
     effective_seconds = max(0.0, state.remaining_budget_seconds + (pending_minutes * 60))
     remaining = _format_time(effective_seconds)
     overtime = _format_time(getattr(state, "overtime_seconds", 0.0))
-    total = _format_time(MAX_PLAY_BUDGET_SECONDS)
+    total = _format_time(MAX_PLAY_BUDGET)
     activity = state.tracked_activity_name if state.is_tracked_activity_running else "None"
     session = _format_time(state.seconds_used_this_session) if state.is_tracked_activity_running else "N/A"
 

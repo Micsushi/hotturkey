@@ -15,12 +15,12 @@ from hotturkey.config import (
     STEAM_HELPER_PROCESS_NAMES,
     TRACKED_BROWSERS,
     TRACKED_SITES,
-    MAX_PLAY_BUDGET_SECONDS,
-    BUDGET_RECOVERY_PER_SECOND_IDLE,
-    DETECTION_POLL_INTERVAL_SECONDS,
+    MAX_PLAY_BUDGET,
+    BUDGET_RECOVERY_PER_SECOND_RATIO,
+    POLL_INTERVAL,
     BONUS_SITES,
     BONUS_RECOVERY_MULTIPLIER,
-    AFK_IDLE_THRESHOLD_SECONDS,
+    AFK_IDLE_THRESHOLD,
     OVERTIME_INTERVAL_DECAY_FACTOR,
     OVERTIME_MIN_INTERVAL_SECONDS,
 )
@@ -260,7 +260,7 @@ def _overtime_level_from_debt(overtime_seconds: float) -> int:
         return 0
     base_interval = max(
         float(OVERTIME_MIN_INTERVAL_SECONDS),
-        0.5 * float(MAX_PLAY_BUDGET_SECONDS),
+        0.5 * float(MAX_PLAY_BUDGET),
     )
     level = 1
     remaining_for_higher = max(0.0, overtime_seconds - base_interval)
@@ -282,7 +282,7 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
     Example: [██████░░░░░░░░] 25% used (recovering)
              [████████████████] 100% used (overtime L2)
     """
-    cap = float(MAX_PLAY_BUDGET_SECONDS) if MAX_PLAY_BUDGET_SECONDS > 0 else 1.0
+    cap = float(MAX_PLAY_BUDGET) if MAX_PLAY_BUDGET > 0 else 1.0
     remaining_clamped = max(0.0, min(state.remaining_budget_seconds, cap))
     used_ratio = 1.0 - (remaining_clamped / cap)
     used_ratio = max(0.0, min(1.0, used_ratio))
@@ -381,7 +381,7 @@ def recover_budget(state, elapsed_seconds):
 
     Recovery first pays down any accumulated overtime_seconds (time spent past
     0 budget). Only once overtime_seconds reaches 0 does additional recovery
-    start refilling remaining_budget_seconds up to MAX_PLAY_BUDGET_SECONDS.
+    start refilling remaining_budget_seconds up to MAX_PLAY_BUDGET.
     Budgets already above the normal cap (from extra time or set commands)
     are not reduced.
     """
@@ -391,11 +391,11 @@ def recover_budget(state, elapsed_seconds):
 
     # If budget is already above the normal cap (because of extra time),
     # don't change it during idle periods.
-    if state.remaining_budget_seconds >= MAX_PLAY_BUDGET_SECONDS and state.overtime_seconds <= 0:
+    if state.remaining_budget_seconds >= MAX_PLAY_BUDGET and state.overtime_seconds <= 0:
         return
 
-    cap = MAX_PLAY_BUDGET_SECONDS
-    recovered = elapsed_seconds * BUDGET_RECOVERY_PER_SECOND_IDLE
+    cap = MAX_PLAY_BUDGET
+    recovered = elapsed_seconds * BUDGET_RECOVERY_PER_SECOND_RATIO
 
     before_budget = state.remaining_budget_seconds
     before_overtime = state.overtime_seconds
@@ -580,10 +580,10 @@ def update_budget(state):
 
     # Snap elapsed time to neat multiples of the poll interval so logs show
     # clean 5.0s consumed / 2.5s recovered instead of 5.1 / 1.9 due to jitter.
-    if elapsed_seconds > 0 and DETECTION_POLL_INTERVAL_SECONDS > 0:
+    if elapsed_seconds > 0 and POLL_INTERVAL > 0:
         elapsed_seconds = round(
-            elapsed_seconds / DETECTION_POLL_INTERVAL_SECONDS
-        ) * DETECTION_POLL_INTERVAL_SECONDS
+            elapsed_seconds / POLL_INTERVAL
+        ) * POLL_INTERVAL
         if elapsed_seconds < 0:
             elapsed_seconds = 0.0
 
@@ -611,12 +611,12 @@ def update_budget(state):
     global _was_afk
     idle_check_start = time.time()
     idle_seconds = get_idle_seconds()
-    is_afk = idle_seconds >= AFK_IDLE_THRESHOLD_SECONDS
+    is_afk = idle_seconds >= AFK_IDLE_THRESHOLD
     idle_check_end = time.time()
 
     if is_afk and not _was_afk:
         log.info(
-            f"[IDLE] User AFK (>{AFK_IDLE_THRESHOLD_SECONDS}s)."
+            f"[IDLE] User AFK (>{AFK_IDLE_THRESHOLD}s)."
         )
     elif not is_afk and _was_afk:
         log.info("[IDLE] User activity resumed.")

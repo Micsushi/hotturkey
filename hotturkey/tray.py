@@ -7,7 +7,7 @@ import subprocess
 import pystray
 from PIL import Image, ImageDraw
 
-from hotturkey.config import MAX_PLAY_BUDGET_SECONDS, LOG_FILE
+from hotturkey.config import MAX_PLAY_BUDGET, LOG_FILE
 from hotturkey.logger import log
 
 
@@ -20,15 +20,15 @@ _quit_callback = None
 def _build_icon_image(budget_seconds):
     """Draw a 64x64 colored circle.
     Color depends on the *percentage* of budget left so it behaves consistently
-    even when MAX_PLAY_BUDGET_SECONDS is changed for testing:
+    even when MAX_PLAY_BUDGET is changed for testing:
       - green  : > 50% remaining
       - yellow : 25–50% remaining
       - orange : 0–25% remaining
       - red    : 0 or below"""
-    if MAX_PLAY_BUDGET_SECONDS <= 0:
+    if MAX_PLAY_BUDGET <= 0:
         ratio = 0.0
     else:
-        ratio = max(0.0, min(1.0, budget_seconds / float(MAX_PLAY_BUDGET_SECONDS)))
+        ratio = max(0.0, min(1.0, budget_seconds / float(MAX_PLAY_BUDGET)))
 
     if ratio <= 0.0:
         color = "#DC2626"  # red
@@ -59,7 +59,7 @@ def _on_status(icon, item):
     s = _state_ref
     remaining = _format_time(s.remaining_budget_seconds)
     overtime = _format_time(getattr(s, "overtime_seconds", 0.0))
-    total = _format_time(MAX_PLAY_BUDGET_SECONDS)
+    total = _format_time(MAX_PLAY_BUDGET)
     activity = s.tracked_activity_name if s.is_tracked_activity_running else "None"
     session = _format_time(s.seconds_used_this_session) if s.is_tracked_activity_running else "N/A"
     msg = (
@@ -104,7 +104,7 @@ def create_tray_icon(quit_callback=None):
     quit_callback is called when the user clicks Quit, so run.py can stop its loop."""
     global _icon, _quit_callback
     _quit_callback = quit_callback
-    image = _build_icon_image(MAX_PLAY_BUDGET_SECONDS)
+    image = _build_icon_image(MAX_PLAY_BUDGET)
     menu = pystray.Menu(
         pystray.MenuItem("Status", _on_status),
         pystray.MenuItem("Show logs", _on_show_logs),

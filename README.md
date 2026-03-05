@@ -18,26 +18,39 @@ A screen time enforcer that tracks Steam games and tracked sites (YouTube, etc.)
 
 ## Setup
 
-1. Make sure you have **Python 3.8+** installed. Open a terminal and check:
-   ```
-   python --version
-   ```
+1. Make sure you have **Python 3.8+** installed.
+
+   - If you installed from python.org, you can usually just run:
+     ```
+     python --version
+     ```
+   - On some systems (like this repo's dev box) you might instead have a
+     specific path such as:
+     ```
+     C:\Users\<you>\AppData\Local\Python\pythoncore-3.14-64\python.exe
+     ```
 
 2. Clone or download this repo, then open a terminal in the project folder:
    ```
    cd C:\Users\sushi\Documents\Github\hotturkey
    ```
 
-3. Install dependencies:
+3. Install dependencies **for the same interpreter you will use to run HotTurkey**.
+   Replace the path after `&` with your actual `python.exe` if needed:
    ```
-   pip install -r requirements.txt
+   # PowerShell
+   & "C:\Path\To\Your\Python\python.exe" -m pip install -r ".\requirements.txt"
    ```
 
 ## Running
 
-Start the app:
+Start the app (from the project folder):
 ```
 python run.py
+```
+or, if you are using a specific interpreter path:
+```
+"C:\Path\To\Your\Python\python.exe" "C:\Users\<you>\Documents\Github\hotturkey\run.py"
 ```
 
 The app spawns a **background process** and exits. You can close the terminal immediately — HotTurkey keeps running.
@@ -138,6 +151,27 @@ hotturkey/
   run.py            — main entry point
   requirements.txt  — Python dependencies
 ```
+
+## Auto-start on Windows login (optional)
+
+To have HotTurkey start automatically when you log in:
+
+1. Open the **Startup** folder:
+   - Press `Win + R`, type `shell:startup`, press Enter.
+2. Right-click in the folder → **New → Shortcut**.
+3. For the location/target, use a single line (adjust the Python path to match your system):
+   ```
+   "C:\Path\To\Your\Python\python.exe" "C:\Users\<you>\Documents\Github\hotturkey\run.py"
+   ```
+4. Click **Next**, name it `HotTurkey`, and click **Finish**.
+5. (Recommended) Right-click the new shortcut → **Properties**:
+   - Set **Start in** to:
+     ```
+     C:\Users\<you>\Documents\Github\hotturkey
+     ```
+   - Optionally set **Run** to **Minimized**.
+
+You can test it immediately by double-clicking the shortcut in the Startup folder.
 
 ## State storage
 

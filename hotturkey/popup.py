@@ -26,13 +26,18 @@ def show_flash_popup(message):
 
 
 def show_fullscreen_popup(message):
-    """Open a maximized red terminal window that stays open until the user closes it."""
-    cmd = f'mode con cols=120 lines=30 & color 4F & echo. & echo  {message} & echo. & pause'
-    # Use cmd directly (no shell=True) and let `start /max` create a maximized
-    # console window that waits on `pause` so it cannot disappear on its own.
+    """Open a maximized red terminal window that stays open until the user presses a key.
+
+    Implemented via a single `cmd` window started maximized. After showing the
+    message, it runs `pause`, so pressing Enter (or any key) closes the window.
+    """
+    # Simple console layout: red background, white text, big-ish window, message, then pause.
+    cmd = f"color 4F & mode con cols=120 lines=30 & echo. & echo  {message} & echo. & pause"
+
+    # Use `start` to spawn one maximized console window. Because the main app is
+    # running detached in the background, this will be the only visible window.
     subprocess.Popen(
         ["cmd", "/c", "start", "", "/max", "cmd", "/c", cmd],
-        creationflags=subprocess.CREATE_NEW_CONSOLE,
     )
     log.info(f"[POPUP] Fullscreen: {message}")
 

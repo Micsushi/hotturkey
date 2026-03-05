@@ -23,6 +23,12 @@ from hotturkey.state import load_extra_minutes_pending, save_extra_minutes_pendi
 
 # --- Detection helpers ---
 
+# Names of executables we've positively identified as Steam-launched games
+# during this runtime. Once something has been seen as a Steam game, we keep
+# treating that exe name as a game for the rest of the session, even if its
+# parent process tree changes later (common with launchers/anti-cheat).
+_KNOWN_STEAM_GAME_NAMES = set()
+
 def get_foreground_window_info():
     """Get the process ID and title of the window the user is currently looking at."""
     hwnd = win32gui.GetForegroundWindow()
@@ -66,7 +72,17 @@ def detect_steam_game_focused(foreground_pid):
     if proc_name in STEAM_HELPER_PROCESS_NAMES:
         return ""
 
+    # If we've already confirmed this exe as a Steam game earlier in the
+    # session, keep treating it as a game even if its current process tree
+    # no longer has steam.exe as an ancestor (some launchers/anti-cheat
+    # chains re-parent the actual game process).
+    if proc_name in _KNOWN_STEAM_GAME_NAMES:
+        return proc.name()
+
+    # First-time detection: walk up the process tree to see if steam.exe is
+    # an ancestor. If so, remember this exe name as a known Steam game.
     if is_steam_ancestor(foreground_pid):
+        _KNOWN_STEAM_GAME_NAMES.add(proc_name)
         return proc.name()
 
     return ""

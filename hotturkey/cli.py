@@ -12,6 +12,7 @@ from hotturkey.state import (
     load_state,
     load_extra_minutes_pending,
     save_extra_minutes_pending,
+    save_set_minutes,
 )
 
 
@@ -29,6 +30,7 @@ def handle_status():
     pending_minutes = load_extra_minutes_pending()
     effective_seconds = max(0.0, state.remaining_budget_seconds + (pending_minutes * 60))
     remaining = _format_time(effective_seconds)
+    overtime = _format_time(getattr(state, "overtime_seconds", 0.0))
     total = _format_time(MAX_PLAY_BUDGET_SECONDS)
     activity = state.tracked_activity_name if state.is_tracked_activity_running else "None"
     session = _format_time(state.seconds_used_this_session) if state.is_tracked_activity_running else "N/A"
@@ -36,6 +38,7 @@ def handle_status():
     print()
     print("  HotTurkey Status")
     print(f"    Budget remaining : {remaining} / {total}")
+    print(f"    Overtime debt    : {overtime}")
     print(f"    Active tracking  : {activity}")
     print(f"    Session time     : {session}")
     print(f"    Overtime level   : {state.overtime_escalation_level}")
@@ -54,45 +57,78 @@ def handle_extra(minutes):
     pending_minutes += minutes
     save_extra_minutes_pending(pending_minutes)
 
-    # Show what the budget will effectively be once the app (if running) picks up the change
-    effective_seconds = max(0.0, state.remaining_budget_seconds + (pending_minutes * 60))
+    # Predict what the budget and overtime will be once the app (if running)
+    # picks up all pending extra minutes, using the same rules as the monitor:
+    #   - Positive extra clears overtime first, then adds to budget
+    #   - Negative extra deducts from budget first, then becomes overtime debt
+    pending_minutes = load_extra_minutes_pending()
+    extra_seconds = pending_minutes * 60
+    before_budget = state.remaining_budget_seconds
+    before_overtime = getattr(state, "overtime_seconds", 0.0)
+
+    future_budget = before_budget
+    future_overtime = before_overtime
+
+    if extra_seconds > 0:
+        # Clear overtime, then add remainder to budget.
+        debt_cleared = min(before_overtime, extra_seconds)
+        future_overtime = before_overtime - debt_cleared
+        extra_seconds -= debt_cleared
+        if extra_seconds > 0:
+            future_budget = max(0.0, before_budget + extra_seconds)
+    elif extra_seconds < 0:
+        # Deduct from budget, then any remainder becomes overtime.
+        delta = extra_seconds  # negative
+        new_budget = before_budget + delta
+        if new_budget >= 0:
+            future_budget = new_budget
+        else:
+            future_budget = 0.0
+            overdraw = -new_budget
+            future_overtime = before_overtime + overdraw
+
+    effective_seconds = max(0.0, future_budget)
     print()
     if minutes > 0:
         print(f"  Added {minutes} minutes.")
     else:
         print(f"  Deducted {abs(minutes)} minutes.")
     print(f"  Budget will be ~{_format_time(effective_seconds)} (next poll if app is running).")
+    if future_overtime > 0:
+        print(f"  Overtime debt will be ~{_format_time(future_overtime)}.")
     print()
 
 
 def handle_set(minutes):
-    """Set the budget to an exact number of minutes (target value).
-    Implemented as a delta added to extra_minutes_pending_from_cli so it stays
-    in sync with the running app."""
-    if minutes < 0:
-        print("  Minutes must be zero or positive.")
-        sys.exit(1)
+    """Set budget/overtime explicitly.
 
+    Semantics:
+      - Positive minutes: set remaining budget to this many minutes and clear
+        any overtime debt.
+      - Negative minutes: set budget to 0 and set overtime debt to abs(minutes)
+        minutes.
+      - Zero: set both budget and overtime to 0.
+
+    Implemented via a small sidecar file so it works whether the app is running
+    or not; the monitor picks it up on the next poll.
+    """
     state = load_state()
-    pending_minutes = load_extra_minutes_pending()
-    # Current effective budget (what the app will use once pending extras are applied)
-    current_effective_seconds = max(
-        0.0, state.remaining_budget_seconds + (pending_minutes * 60)
-    )
-    desired_seconds = minutes * 60
-    delta_seconds = desired_seconds - current_effective_seconds
-    delta_minutes = delta_seconds / 60.0
 
-    pending_minutes += delta_minutes
-    save_extra_minutes_pending(pending_minutes)
+    # Clear any pending extra-time deltas so 'set' is an absolute override.
+    save_extra_minutes_pending(0.0)
 
-    # Recompute effective budget after applying the new pending value
-    pending_minutes = load_extra_minutes_pending()
-    new_effective_seconds = max(
-        0.0, state.remaining_budget_seconds + (pending_minutes * 60)
-    )
+    save_set_minutes(minutes)
+
     print()
-    print(f"  Budget set to: {_format_time(new_effective_seconds)}")
+    if minutes > 0:
+        print(f"  Budget will be set to: {_format_time(minutes * 60)} remaining.")
+        print("  Overtime will be cleared to 0.")
+    elif minutes < 0:
+        debt_minutes = abs(minutes)
+        print("  Budget will be set to: 0:00.")
+        print(f"  Overtime debt will be set to: {_format_time(debt_minutes * 60)}.")
+    else:
+        print("  Budget and overtime will be reset to 0:00.")
     print("  (Takes effect on next poll if app is running.)")
     print()
 

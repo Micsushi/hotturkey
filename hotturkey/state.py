@@ -15,6 +15,11 @@ class AppState:
         # How many seconds of play time are left
         self.remaining_budget_seconds = float(MAX_PLAY_BUDGET_SECONDS)
 
+        # How many seconds have been spent *after* the budget hit 0.
+        # This is tracked separately so we can show "overtime used" and
+        # pay it back before refilling normal budget.
+        self.overtime_seconds = 0.0
+
         # When the last poll cycle ran (used to calculate time between checks)
         self.last_poll_timestamp = time.time()
 
@@ -51,6 +56,7 @@ class AppState:
         """Convert this object to a plain dictionary so it can be saved as JSON."""
         return {
             "remaining_budget_seconds": self.remaining_budget_seconds,
+            "overtime_seconds": self.overtime_seconds,
             "last_poll_timestamp": self.last_poll_timestamp,
             "is_tracked_activity_running": self.is_tracked_activity_running,
             "tracked_activity_name": self.tracked_activity_name,
@@ -67,6 +73,7 @@ class AppState:
         """Restore this object's fields from a dictionary (loaded from JSON).
         Uses defaults if any key is missing, so old state files still work."""
         self.remaining_budget_seconds = data.get("remaining_budget_seconds", float(MAX_PLAY_BUDGET_SECONDS))
+        self.overtime_seconds = data.get("overtime_seconds", 0.0)
         self.last_poll_timestamp = data.get("last_poll_timestamp", time.time())
         self.is_tracked_activity_running = data.get("is_tracked_activity_running", False)
         self.tracked_activity_name = data.get("tracked_activity_name", "")
@@ -99,7 +106,7 @@ def save_state(state):
         json.dump(state.to_dict(), f, indent=2)
 
 
-# --- Extra-time helpers for CLI <-> monitor coordination ---
+    # --- Extra-time helpers for CLI <-> monitor coordination ---
 
 EXTRA_FILE = os.path.join(STATE_DIR, "extra.json")
 
@@ -122,3 +129,32 @@ def save_extra_minutes_pending(minutes):
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(EXTRA_FILE, "w") as f:
         json.dump({"extra_minutes_pending_from_cli": float(minutes)}, f, indent=2)
+
+
+# --- Set-time helpers for CLI <-> monitor coordination ---
+
+SET_FILE = os.path.join(STATE_DIR, "set.json")
+
+
+def load_set_minutes():
+    """Return minutes requested via the 'set' CLI (can be positive or negative).
+
+    Positive value means 'set budget to this many minutes remaining and clear overtime'.
+    Negative value means 'set overtime debt to this many minutes (budget 0)'.
+    Zero means 'no pending set command'.
+    """
+    if not os.path.exists(SET_FILE):
+        return 0.0
+    try:
+        with open(SET_FILE, "r") as f:
+            data = json.load(f)
+        return float(data.get("set_minutes_pending_from_cli", 0.0))
+    except (json.JSONDecodeError, IOError, ValueError):
+        return 0.0
+
+
+def save_set_minutes(minutes):
+    """Persist pending set minutes so the running app (or next run) can pick them up."""
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(SET_FILE, "w") as f:
+        json.dump({"set_minutes_pending_from_cli": float(minutes)}, f, indent=2)

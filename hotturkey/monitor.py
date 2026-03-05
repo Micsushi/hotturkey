@@ -21,9 +21,16 @@ from hotturkey.config import (
     BONUS_SITES,
     BONUS_RECOVERY_MULTIPLIER,
     AFK_IDLE_THRESHOLD_SECONDS,
+    OVERTIME_INTERVAL_DECAY_FACTOR,
+    OVERTIME_MIN_INTERVAL_SECONDS,
 )
 from hotturkey.logger import log
-from hotturkey.state import load_extra_minutes_pending, save_extra_minutes_pending
+from hotturkey.state import (
+    load_extra_minutes_pending,
+    save_extra_minutes_pending,
+    load_set_minutes,
+    save_set_minutes,
+)
 
 
 # --- Detection helpers ---
@@ -247,6 +254,28 @@ def _format_mmss(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+def _overtime_level_from_debt(overtime_seconds: float) -> int:
+    """Compute overtime level (1, 2, 3, ...) from current debt. Matches popup.py logic."""
+    if overtime_seconds <= 0:
+        return 0
+    base_interval = max(
+        float(OVERTIME_MIN_INTERVAL_SECONDS),
+        0.5 * float(MAX_PLAY_BUDGET_SECONDS),
+    )
+    level = 1
+    remaining_for_higher = max(0.0, overtime_seconds - base_interval)
+    if remaining_for_higher > 0:
+        level = 2
+        interval = base_interval * OVERTIME_INTERVAL_DECAY_FACTOR
+        while remaining_for_higher >= interval and interval >= 1.0:
+            remaining_for_higher -= interval
+            level += 1
+            interval *= OVERTIME_INTERVAL_DECAY_FACTOR
+            if interval < 1.0:
+                break
+    return level
+
+
 def _format_budget_bar(state, is_recovering: bool) -> str:
     """Return an ASCII bar representing how much of the budget is used.
 
@@ -257,6 +286,10 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
     remaining_clamped = max(0.0, min(state.remaining_budget_seconds, cap))
     used_ratio = 1.0 - (remaining_clamped / cap)
     used_ratio = max(0.0, min(1.0, used_ratio))
+
+    # Only show 100% when budget is actually fully used (remaining <= 0).
+    if state.remaining_budget_seconds > 0 and used_ratio >= 1.0:
+        used_ratio = 0.99
 
     used_blocks = int(round(used_ratio * _BUDGET_BAR_WIDTH))
     used_blocks = max(0, min(_BUDGET_BAR_WIDTH, used_blocks))
@@ -269,10 +302,11 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
     # Suffix describing state: overtime vs recovering vs full/normal.
     suffix_parts = []
     if state.remaining_budget_seconds <= 0:
-        # We are in overtime; escalation level 0 means we've just hit 0 for
-        # the first time and the first popup is about to be scheduled.
-        level = state.overtime_escalation_level or 1
-        suffix_parts.append(f"overtime L{level}")
+        overtime = getattr(state, "overtime_seconds", 0.0)
+        if overtime > 0:
+            level = _overtime_level_from_debt(overtime)
+            suffix_parts.append(f"overtime L{level}")
+            suffix_parts.append(f"debt {_format_mmss(overtime)}")
     elif is_recovering:
         if percent == 0:
             suffix_parts.append("full")
@@ -281,42 +315,111 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
 
     suffix = ""
     if suffix_parts:
-        suffix = " (" + ", ".join(suffix_parts) + ")"
+        # Use pipe separators for all extra state info (overtime level, debt, etc.).
+        suffix = " | " + " | ".join(suffix_parts)
 
     return f"[{bar}] {percent:3d}% used{suffix}"
 
 def consume_budget(state, elapsed_seconds):
-    """Subtract play time from budget. Budget stops at 0, never goes negative."""
-    before = state.remaining_budget_seconds
-    state.remaining_budget_seconds = max(0.0, state.remaining_budget_seconds - elapsed_seconds)
-    spent = before - state.remaining_budget_seconds
+    """Subtract play time from budget.
+
+    When there is remaining budget, we subtract from it until it reaches 0.
+    Any additional time beyond that is tracked separately as overtime_seconds,
+    so we can later show and "pay back" that debt before refilling normal
+    budget.
+    """
+    # Ensure the field exists even for older state files.
+    if not hasattr(state, "overtime_seconds"):
+        state.overtime_seconds = 0.0
+
+    before_budget = state.remaining_budget_seconds
+    before_overtime = state.overtime_seconds
+
+    if before_budget > 0:
+        new_budget = before_budget - elapsed_seconds
+        if new_budget >= 0:
+            # All consumption fits within remaining budget.
+            state.remaining_budget_seconds = new_budget
+            overtime_added = 0.0
+        else:
+            # We used up the remaining budget and the rest is overtime.
+            state.remaining_budget_seconds = 0.0
+            overtime_added = -new_budget  # positive seconds over budget
+    else:
+        # Already at/below zero budget: everything counts as overtime.
+        overtime_added = elapsed_seconds
+
+    state.overtime_seconds = max(0.0, before_overtime + overtime_added)
+
+    # For the [BUDGET] line, distinguish between normal budget consumption and
+    # overtime accumulation so we never log "-0.0s consumed" when time was
+    # actually added to overtime.
+    spent = max(0.0, before_budget - state.remaining_budget_seconds)
     bar = _format_budget_bar(state, is_recovering=False)
     remaining_str = _format_mmss(state.remaining_budget_seconds)
-    log.info(
-        f"[BUDGET] | -{spent:.1f}s consumed | "
-        f"{remaining_str} remaining | {bar}"
-    )
+    if spent > 0 and overtime_added > 0:
+        log.info(
+            f"[BUDGET] | -{spent:.1f}s consumed, +{overtime_added:.1f}s overtime | "
+            f"{remaining_str} remaining | {bar}"
+        )
+    elif spent > 0:
+        log.info(
+            f"[BUDGET] | -{spent:.1f}s consumed | "
+            f"{remaining_str} remaining | {bar}"
+        )
+    else:
+        # No normal budget spent this tick, but we may still have gone further
+        # into overtime.
+        log.info(
+            f"[BUDGET] | +{overtime_added:.1f}s overtime | "
+            f"{remaining_str} remaining | {bar}"
+        )
 
 
 def recover_budget(state, elapsed_seconds):
-    """Add time back to budget while idle.
-    Recovery fills up to MAX_PLAY_BUDGET_SECONDS, but never reduces budgets
-    that are already above that (from extra time or set commands)."""
+    """Add time back to budget while idle or on bonus sites.
+
+    Recovery first pays down any accumulated overtime_seconds (time spent past
+    0 budget). Only once overtime_seconds reaches 0 does additional recovery
+    start refilling remaining_budget_seconds up to MAX_PLAY_BUDGET_SECONDS.
+    Budgets already above the normal cap (from extra time or set commands)
+    are not reduced.
+    """
+    # Ensure the field exists even for older state files.
+    if not hasattr(state, "overtime_seconds"):
+        state.overtime_seconds = 0.0
+
     # If budget is already above the normal cap (because of extra time),
     # don't change it during idle periods.
-    if state.remaining_budget_seconds >= MAX_PLAY_BUDGET_SECONDS:
+    if state.remaining_budget_seconds >= MAX_PLAY_BUDGET_SECONDS and state.overtime_seconds <= 0:
         return
 
     cap = MAX_PLAY_BUDGET_SECONDS
     recovered = elapsed_seconds * BUDGET_RECOVERY_PER_SECOND_IDLE
-    before = state.remaining_budget_seconds
-    state.remaining_budget_seconds = min(cap, state.remaining_budget_seconds + recovered)
-    gained = state.remaining_budget_seconds - before
 
-    # If we've fully recovered back to the normal cap, reset the overtime
-    # escalation cycle so future over-budget sessions start fresh, and log
-    # an explicit message when we hit full budget.
-    just_filled = before < cap and state.remaining_budget_seconds >= cap
+    before_budget = state.remaining_budget_seconds
+    before_overtime = state.overtime_seconds
+
+    # Step 1: pay down overtime debt.
+    debt_paid = 0.0
+    if before_overtime > 0 and recovered > 0:
+        debt_paid = min(before_overtime, recovered)
+        state.overtime_seconds = before_overtime - debt_paid
+        recovered -= debt_paid
+
+    # Step 2: any leftover recovery goes into normal budget (up to the cap).
+    gained = 0.0
+    if recovered > 0 and state.remaining_budget_seconds < cap:
+        state.remaining_budget_seconds = min(cap, state.remaining_budget_seconds + recovered)
+        gained = state.remaining_budget_seconds - before_budget
+
+    # If we've fully recovered back to the normal cap and cleared overtime,
+    # reset the escalation cycle so future over-budget sessions start fresh.
+    just_filled = (
+        before_budget < cap
+        and state.remaining_budget_seconds >= cap
+        and state.overtime_seconds <= 0.0
+    )
     if just_filled:
         state.overtime_escalation_level = 0
         state.overtime_next_popup_timestamp = 0.0
@@ -326,16 +429,28 @@ def recover_budget(state, elapsed_seconds):
             f"[BUDGET] | full | "
             f"{full_str} remaining | {full_bar}"
         )
-        # We already logged the transition to full; no need for an extra
-        # '+Xs recovered' line at exactly 100%.
         return
 
+    # Log what happened this tick.
     bar = _format_budget_bar(state, is_recovering=True)
     remaining_str = _format_mmss(state.remaining_budget_seconds)
-    log.info(
-        f"[BUDGET] | +{gained:.1f}s recovered | "
-        f"{remaining_str} remaining | {bar}"
-    )
+
+    if debt_paid > 0 and gained > 0:
+        # Split line: paid overtime and refilled budget in the same tick.
+        log.info(
+            f"[BUDGET] | +{debt_paid:.1f}s overtime repaid, +{gained:.1f}s recovered | "
+            f"{remaining_str} remaining | {bar}"
+        )
+    elif debt_paid > 0:
+        log.info(
+            f"[BUDGET] | +{debt_paid:.1f}s overtime repaid | "
+            f"{remaining_str} remaining | {bar}"
+        )
+    elif gained > 0:
+        log.info(
+            f"[BUDGET] | +{gained:.1f}s recovered | "
+            f"{remaining_str} remaining | {bar}"
+        )
 
 
 def apply_pending_extra_time(state):
@@ -349,22 +464,104 @@ def apply_pending_extra_time(state):
     if pending_minutes == 0:
         return
 
-    extra_seconds = pending_minutes * 60
-    state.remaining_budget_seconds = max(0.0, state.remaining_budget_seconds + extra_seconds)
+    # Ensure overtime field exists even for older state files.
+    if not hasattr(state, "overtime_seconds"):
+        state.overtime_seconds = 0.0
 
-    if pending_minutes > 0:
+    extra_seconds = pending_minutes * 60
+    before_budget = state.remaining_budget_seconds
+    before_overtime = state.overtime_seconds
+
+    debt_cleared = 0.0
+    budget_delta = 0.0
+
+    if extra_seconds > 0:
+        # Positive extra time: first clear overtime debt, then add any leftover
+        # to normal budget (which may go above the usual cap, as before).
+        debt_cleared = min(before_overtime, extra_seconds)
+        state.overtime_seconds = before_overtime - debt_cleared
+        extra_seconds -= debt_cleared
+
+        if extra_seconds != 0.0:
+            state.remaining_budget_seconds = max(0.0, before_budget + extra_seconds)
+            budget_delta = state.remaining_budget_seconds - before_budget
+
         log.info(
-            f"[EXTRA] +{pending_minutes:.1f}min added, "
-            f"{state.remaining_budget_seconds:.0f}s remaining"
+            "[EXTRA] "
+            f"+{pending_minutes:.1f}min applied "
+            f"(cleared {debt_cleared/60.0:.1f}min overtime, "
+            f"+{budget_delta/60.0:.1f}min budget), "
+            f"{state.remaining_budget_seconds:.0f}s remaining, "
+            f"debt {state.overtime_seconds:.0f}s"
         )
     else:
+        # Negative extra time: treat as taking time away. We subtract from
+        # remaining budget first; if that would go below 0, the rest becomes
+        # additional overtime debt.
+        delta = extra_seconds  # negative
+        new_budget = before_budget + delta
+        if new_budget >= 0:
+            state.remaining_budget_seconds = new_budget
+            budget_delta = delta
+        else:
+            state.remaining_budget_seconds = 0.0
+            overdraw = -new_budget  # positive seconds that went past 0
+            state.overtime_seconds = before_overtime + overdraw
+            budget_delta = -before_budget
+
         log.info(
-            f"[EXTRA] {pending_minutes:.1f}min deducted, "
-            f"{state.remaining_budget_seconds:.0f}s remaining"
+            "[EXTRA] "
+            f"{pending_minutes:.1f}min deducted "
+            f"(budget change {budget_delta/60.0:.1f}min), "
+            f"{state.remaining_budget_seconds:.0f}s remaining, "
+            f"debt {state.overtime_seconds:.0f}s"
         )
 
-    # Clear the pending value so we don't apply it again on the next poll
+    # Clear the pending value so we don't apply it again on the next poll.
     save_extra_minutes_pending(0.0)
+
+
+def apply_pending_set_time(state):
+    """Check if the user ran 'hotturkey set X' and pick up the change.
+
+    Semantics:
+      - Positive minutes: budget is set to exactly X minutes remaining,
+        overtime is cleared to 0.
+      - Negative minutes: budget is set to 0, overtime debt is set to
+        abs(X) minutes.
+      - Zero minutes: no-op.
+
+    This acts as an override on top of whatever the current state is, and
+    runs before extra-time adjustments.
+    """
+    minutes = load_set_minutes()
+    if minutes == 0:
+        return
+
+    # Ensure overtime field exists even for older state files.
+    if not hasattr(state, "overtime_seconds"):
+        state.overtime_seconds = 0.0
+
+    if minutes > 0:
+        state.remaining_budget_seconds = float(minutes * 60)
+        state.overtime_seconds = 0.0
+        # Reset overtime escalation cycle; we're effectively starting fresh.
+        state.overtime_escalation_level = 0
+        state.overtime_next_popup_timestamp = 0.0
+        log.info(
+            f"[SET] Budget set to {minutes:.1f}min remaining, overtime cleared."
+        )
+    elif minutes < 0:
+        debt_minutes = abs(minutes)
+        state.remaining_budget_seconds = 0.0
+        state.overtime_seconds = float(debt_minutes * 60)
+        # Level will be recomputed from overtime_seconds by popup logic.
+        log.info(
+            f"[SET] Overtime set to {debt_minutes:.1f}min (budget 0)."
+        )
+
+    # Clear the pending value so we don't apply it again on the next poll.
+    save_set_minutes(0.0)
 
 
 # --- Main update function ---
@@ -392,7 +589,8 @@ def update_budget(state):
 
     state.last_poll_timestamp = now
 
-    # Pick up any extra minutes granted via the CLI.
+    # Pick up any pending 'set' overrides, then extra minutes from the CLI.
+    apply_pending_set_time(state)
     apply_pending_extra_time(state)
 
     # --- PERF: measure major steps inside update_budget ---
@@ -408,7 +606,8 @@ def update_budget(state):
     t_idle_end = time.time()
 
     # Check user idle time (keyboard/mouse). If AFK beyond the threshold, we
-    # freeze budget changes unless a tracked activity is actively focused.
+    # freeze budget changes for idle/bonus time and (optionally) some tracked
+    # activities depending on their type.
     global _was_afk
     idle_check_start = time.time()
     idle_seconds = get_idle_seconds()
@@ -417,8 +616,7 @@ def update_budget(state):
 
     if is_afk and not _was_afk:
         log.info(
-            f"[IDLE] User AFK (>{AFK_IDLE_THRESHOLD_SECONDS}s), "
-            "budget frozen except for active tracking."
+            f"[IDLE] User AFK (>{AFK_IDLE_THRESHOLD_SECONDS}s)."
         )
     elif not is_afk and _was_afk:
         log.info("[IDLE] User activity resumed.")
@@ -441,6 +639,7 @@ def update_budget(state):
     detect_end = time.time()
 
     if mode == "consume":
+        is_steam_session = source_name.startswith("Steam:")
         # Start a new session if this is the first detection
         if not state.is_tracked_activity_running:
             log.info(f"[SESSION] Started: {source_name}")
@@ -450,8 +649,17 @@ def update_budget(state):
 
         state.is_tracked_activity_running = True
         state.tracked_activity_name = source_name
-        state.seconds_used_this_session += elapsed_seconds
-        consume_budget(state, elapsed_seconds)
+
+        # AFK handling:
+        # - For Steam games: when AFK, freeze budget (don't consume or advance session time),
+        #   so idling in a game menu doesn't drain time.
+        # - For tracked sites (YouTube, etc.): always count, even if AFK from
+        #   keyboard/mouse, since you're still watching.
+        if is_afk and is_steam_session:
+            log.debug("[IDLE] AFK during Steam session; freezing budget this tick.")
+        else:
+            state.seconds_used_this_session += elapsed_seconds
+            consume_budget(state, elapsed_seconds)
     else:
         # End the session if we were previously active; overtime cycle is now
         # only reset when budget has fully recovered back to the cap.

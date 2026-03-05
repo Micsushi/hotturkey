@@ -1,190 +1,99 @@
 # HotTurkey
 
-A screen time enforcer that tracks Steam games and tracked sites (YouTube, etc.) in your browser, then nags you with escalating terminal popups when you've played too long.
+A Windows screen-time enforcer: tracks Steam games and browser sites (e.g. YouTube), then nags you with escalating terminal popups when you go over budget.
 
 ## How it works
 
-- You get a **1-hour budget** of play/watch time.
-- At **30 minutes** used, a brief flash reminder appears for 2 seconds then auto-closes.
-- At **1 hour** (budget hits 0), a full-screen red terminal popup appears and stays until you close it.
-- If you keep going, popups escalate: **30 min → 15 min → 7.5 min → 3.75 min...** until you stop.
-- When you stop and close the tracked app, budget recovers at a 1:2 ratio (2 hours idle = full 1hr recovery).
-- Budget never exceeds 1 hour through recovery alone. Use `hotturkey extra` to go beyond that.
+- **Budget** — Configurable play/watch allowance (default 1 hour). While a game or tracked site is focused, time is subtracted. When you switch away (and you’re not AFK), budget recovers at half speed (e.g. 2 hours idle ≈ 1 hour back).
+- **Gentle reminder** — At 30 minutes used (configurable), a short flash reminder appears once per session.
+- **Overtime** — When budget hits 0 you enter overtime. A separate **overtime debt** is tracked and must be paid down (by being idle or on bonus sites) before normal budget refills.
+  - **L1** popup when you first hit 0.
+  - **L2** at 50% of your budget in overtime (e.g. +30 min on a 60 min budget).
+  - **L3, L4, …** at halved steps (e.g. +15 min, +7.5 min, …). Each level shows a full-screen red warning until you close it.
+- **Cap** — Recovery never pushes budget above the cap on its own; use the CLI to add time or set budget/overtime directly.
 
 ## What it tracks
 
-- **Steam games** — any game launched through Steam, only counted when the game window is focused.
-- **Tracked sites in browsers** — by default YouTube, in Brave/Chrome/Firefox/Edge. Only counted when the tab is the active focused window. You can add more sites or browsers in `hotturkey/config.py`.
+- **Steam games** — Focused window must be a process under Steam (process tree is walked; launchers like PioneerGame.exe are handled). Steam’s child processes are scanned periodically so new games are learned without scanning the whole system.
+- **Tracked sites** — YouTube and others in Brave/Chrome/Firefox/Edge, when that tab is the active window. Add sites/browsers in `config.py`.
+- **Bonus sites** — e.g. LeetCode: focused time **recovers** budget faster instead of consuming it.
+
+### AFK (idle)
+
+- AFK = no keyboard/mouse input for the configured threshold (default 5 minutes).
+- **Steam games**: while AFK, budget is frozen (no consumption) so idling in menus doesn’t count.
+- **Tracked sites**: still consume and build overtime (watching counts).
+- **Idle / bonus**: recovery is frozen so you can’t farm time by walking away.
 
 ## Setup
 
-1. Make sure you have **Python 3.8+** installed.
-
-   - If you installed from python.org, you can usually just run:
-     ```
-     python --version
-     ```
-   - On some systems (like this repo's dev box) you might instead have a
-     specific path such as:
-     ```
-     C:\Users\<you>\AppData\Local\Python\pythoncore-3.14-64\python.exe
-     ```
-
-2. Clone or download this repo, then open a terminal in the project folder:
-   ```
-   cd C:\Users\sushi\Documents\Github\hotturkey
-   ```
-
-3. Install dependencies **for the same interpreter you will use to run HotTurkey**.
-   Replace the path after `&` with your actual `python.exe` if needed:
-   ```
-   # PowerShell
+1. **Python 3.8+** — Run `python --version` (or use your full interpreter path if needed).
+2. **Clone** the repo and open a terminal in the project folder.
+3. **Install deps** for the same Python you’ll run with:
+   ```powershell
    & "C:\Path\To\Your\Python\python.exe" -m pip install -r ".\requirements.txt"
    ```
 
 ## Running
 
-Start the app (from the project folder):
-```
+```text
 python run.py
 ```
-or, if you are using a specific interpreter path:
-```
-"C:\Path\To\Your\Python\python.exe" "C:\Users\<you>\Documents\Github\hotturkey\run.py"
-```
 
-The app spawns a **background process** and exits. You can close the terminal immediately — HotTurkey keeps running.
+The app starts a **background process** and exits; you can close the terminal. HotTurkey keeps running.
 
-You'll see:
-- A **system tray icon** near your clock (bottom-right). The circle is green (plenty of budget), yellow (10-30 min left), orange (<10 min), or red (budget depleted).
-- Logs saved to `C:\Users\<you>\.hotturkey\hotturkey.log`.
+- **Tray icon** (near the clock): green → yellow → orange → red as budget drops. Hover for remaining time and current activity.
+- **Logs** — `%USERPROFILE%\.hotturkey\hotturkey.log`. Right-click tray → **Show logs** to tail it.
 
-**Right-click the tray icon** for:
-- **Status** — quick popup with budget and activity info
-- **Show logs** — opens a terminal with live log output (tails the log file)
-- **Quit** — stops the app
+**Restart with new code** — Run `python run.py` again. The current instance is asked to exit; after it shuts down, a new one starts (single instance, no duplicate tray).
 
-## CLI commands
+**Tray menu:** Status | Show logs | Quit.
 
-Open a **separate** terminal (keep `run.py` running in the other one):
+## CLI
 
-**Check your remaining budget:**
-```
-python -m hotturkey.cli status
-```
+In a **separate** terminal:
 
-**Add extra time (only way to go above 1hr):**
-```
-python -m hotturkey.cli extra 30
-```
-This adds 30 minutes. The running app picks it up within 5 seconds.
+| Command | Effect |
+|--------|--------|
+| `python -m hotturkey.cli status` | Show budget, overtime debt, activity, session time, overtime level. |
+| `python -m hotturkey.cli extra 30` | Add 30 minutes. Positive time clears overtime debt first, then adds to budget. |
+| `python -m hotturkey.cli extra -10` | Remove 10 minutes from budget; if that would go below 0, the rest becomes overtime debt. |
+| `python -m hotturkey.cli set 30` | Set budget to 30 minutes remaining and clear overtime. |
+| `python -m hotturkey.cli set -15` | Set budget to 0 and overtime debt to 15 minutes. |
+| `python -m hotturkey.cli set 0` | Set both budget and overtime to 0. |
 
-## Testing it yourself
+Changes are applied on the next poll when the app is running.
 
-Here's how to verify each feature works:
+## Testing
 
-### 1. Basic startup
-```
-python run.py
-```
-- You'll see "HotTurkey started in background. You can close this terminal."
-- Confirm a green circle appears in the system tray.
-- Hover over it — tooltip should say "HotTurkey: 60:00 remaining".
-- Right-click → **Show logs** to see live log output in a new terminal.
-
-### 2. YouTube detection
-- Open Brave (or Chrome/Firefox/Edge) and go to youtube.com.
-- Make sure the YouTube tab is focused (click on it).
-- Watch the terminal logs — you should see `[WATCHING] YouTube (Brave) is focused`.
-- The tray tooltip should start counting down.
-- Alt-tab away from the browser — logs should stop showing `[WATCHING]` and budget should start recovering.
-
-### 3. Steam game detection
-- Launch any Steam game.
-- With the game window focused, check the logs — you should see `[GAMING] <game>.exe is focused`.
-- Alt-tab out of the game — tracking should pause.
-
-### 4. Status check
-In a separate terminal:
-```
-python -m hotturkey.cli status
-```
-You should see your remaining budget, what's being tracked, and session time.
-
-### 5. Gentle reminder (30-min mark)
-- To test without waiting 30 min, temporarily edit `hotturkey/config.py` and set `GENTLE_REMINDER_AFTER_SECONDS = 10`.
-- Start `run.py`, open YouTube, and wait 10 seconds.
-- A small terminal window should flash briefly and auto-close.
-- Reset the config value after testing.
-
-### 6. Overtime popup (budget = 0)
-- To test quickly, edit `config.py` and set `MAX_PLAY_BUDGET_SECONDS = 30` (30 seconds).
-- Start `run.py`, open YouTube, and wait ~30 seconds.
-- A maximized red terminal should appear saying "BUDGET DEPLETED".
-- Reset the config values after testing.
-
-### 7. Extra time
-While the app is running and your budget is at 0:
-```
-python -m hotturkey.cli extra 5
-```
-- The popups should stop for 5 minutes as your budget is now 5:00 again.
-
-### 8. State persistence
-- While the app is running with some budget used, close it (Ctrl+C or tray Quit).
-- Start it again with `python run.py`.
-- Check the tray tooltip — it should show the same budget you had before, not a fresh 60:00.
+- **Start** — `python run.py` → tray icon appears; hover shows e.g. `60:00 remaining`.
+- **YouTube** — Focus a YouTube tab in a supported browser → logs show `[WATCHING] YouTube (Brave)` (or similar); tray countdown runs; alt-tab away → recovery.
+- **Steam** — Focus a Steam game → `[GAMING] <game>.exe is focused`; alt-tab out → tracking pauses.
+- **Status** — `python -m hotturkey.cli status` shows budget, overtime, activity, session.
+- **Gentle reminder** — Set `GENTLE_REMINDER_AFTER_SECONDS = 10` in config, run, focus YouTube 10 s → flash popup.
+- **Overtime popup** — Set `MAX_PLAY_BUDGET_SECONDS = 30`, run, stay on YouTube ~30 s → red “BUDGET DEPLETED” (L1); keep going for L2/L3.
+- **Extra time** — With budget at 0: `python -m hotturkey.cli extra 5` → overtime (if any) cleared first, then budget gets 5 minutes.
+- **Persistence** — Quit via tray, start again → same budget/overtime (and startup log shows overtime debt if any).
 
 ## Files
 
-```
-hotturkey/
-  hotturkey/
-    __init__.py     — marks it as a Python package
-    config.py       — all tunable constants (budget, intervals, tracked sites)
-    state.py        — data model and JSON persistence
-    monitor.py      — detection (Steam + browser) and budget logic
-    popup.py        — flash and fullscreen popup spawning
-    tray.py         — system tray icon
-    logger.py       — logging to console + file
-    cli.py          — CLI commands (status, extra)
-  run.py            — main entry point
-  requirements.txt  — Python dependencies
-```
+- **run.py** — Entry point; starts background process and tray.
+- **hotturkey/** — Package: `config.py` (tunables), `state.py` (persistence), `monitor.py` (detection + budget/overtime), `popup.py` (reminders + overtime popups), `tray.py` (icon + menu), `logger.py`, `cli.py` (status, extra, set).
+- **requirements.txt** — Python dependencies.
 
-## Auto-start on Windows login (optional)
+## State and config
 
-To have HotTurkey start automatically when you log in:
+**State dir:** `%USERPROFILE%\.hotturkey\`
 
-1. Open the **Startup** folder:
-   - Press `Win + R`, type `shell:startup`, press Enter.
-2. Right-click in the folder → **New → Shortcut**.
-3. For the location/target, use a single line (adjust the Python path to match your system):
-   ```
-   "C:\Path\To\Your\Python\python.exe" "C:\Users\<you>\Documents\Github\hotturkey\run.py"
-   ```
-4. Click **Next**, name it `HotTurkey`, and click **Finish**.
-5. (Recommended) Right-click the new shortcut → **Properties**:
-   - Set **Start in** to:
-     ```
-     C:\Users\<you>\Documents\Github\hotturkey
-     ```
-   - Optionally set **Run** to **Minimized**.
+- `state.json` — Budget, overtime debt, session, timestamps.
+- `extra.json` / `set.json` — Pending CLI `extra` / `set` for the next poll.
+- `run.pid` — Current process PID for clean restart.
+- `hotturkey.log` — Log file.
 
-You can test it immediately by double-clicking the shortcut in the Startup folder.
+**Config** (`hotturkey/config.py`): budget cap, recovery rate, poll interval, AFK threshold, tracked/bonus sites and browsers, gentle-reminder timing, overtime level thresholds.
 
-## State storage
+## Auto-start (optional)
 
-All state is saved to `C:\Users\<you>\.hotturkey\`:
-- `state.json` — budget, session info, timestamps (updated every 5 seconds)
-- `hotturkey.log` — log history
-
-## Configuration
-
-Edit `hotturkey/config.py` to change:
-- `MAX_PLAY_BUDGET_SECONDS` — total allowed time (default: 3600 = 1hr)
-- `BUDGET_RECOVERY_PER_SECOND_IDLE` — recovery speed (default: 0.5, meaning 2hr idle = full recovery)
-- `TRACKED_BROWSERS` — list of browser names to monitor
-- `TRACKED_SITES` — list of site names to monitor
-- `GENTLE_REMINDER_AFTER_SECONDS` — when the gentle flash popup appears
-- `FIRST_OVERTIME_POPUP_DELAY_SECONDS` — first overtime popup delay
+1. `Win + R` → `shell:startup` → Enter.
+2. New shortcut → Target: `"C:\Path\To\Python\python.exe" "C:\Path\To\hotturkey\run.py"`.
+3. Name it e.g. HotTurkey. Optionally set **Start in** to the project folder and **Run** to Minimized.

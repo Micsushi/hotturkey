@@ -13,7 +13,11 @@ import win32api
 import win32event
 import winerror
 
-from hotturkey.config import DETECTION_POLL_INTERVAL_SECONDS, MAX_PLAY_BUDGET_SECONDS
+from hotturkey.config import (
+    DETECTION_POLL_INTERVAL_SECONDS,
+    MAX_PLAY_BUDGET_SECONDS,
+    STATE_DIR,
+)
 from hotturkey.state import load_state, save_state
 from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
@@ -28,6 +32,12 @@ _running = True
 # HotTurkey process runs at a time.
 _single_instance_mutex = None
 _MUTEX_NAME = "HotTurkeySingleton"
+
+# Per-process shutdown event: each instance creates "HotTurkeyShutdown_<pid>"
+# and writes its pid to STATE_DIR/run.pid so a new run can signal the correct
+# process. This avoids the new instance inheriting a signaled event.
+_shutdown_event = None
+_PID_FILE = os.path.join(STATE_DIR, "run.pid")
 
 
 def _format_mmss(seconds: float) -> str:
@@ -55,7 +65,13 @@ def monitor_loop():
 
     remaining_str = _format_mmss(state.remaining_budget_seconds)
     max_str = _format_mmss(MAX_PLAY_BUDGET_SECONDS)
-    log.info(f"[START] Budget: {remaining_str} / {max_str}")
+    # Show both remaining budget and any stored overtime debt on startup.
+    overtime_seconds = getattr(state, "overtime_seconds", 0.0)
+    overtime_str = _format_mmss(overtime_seconds)
+    if overtime_seconds > 0:
+        log.info(f"[START] Budget: {remaining_str} / {max_str}, overtime debt: {overtime_str}")
+    else:
+        log.info(f"[START] Budget: {remaining_str} / {max_str}")
     log.debug(f"[DEBUG] Poll interval: {DETECTION_POLL_INTERVAL_SECONDS}s")
 
     while _running:
@@ -94,18 +110,56 @@ def monitor_loop():
 
 
 def main():
-    global _running, _single_instance_mutex
+    global _running, _single_instance_mutex, _shutdown_event
 
-    # Acquire a system-wide mutex so a second background instance exits
-    # immediately instead of running two monitors/tray icons at once.
+    # First, try to acquire the single-instance mutex.
     _single_instance_mutex = win32event.CreateMutex(None, False, _MUTEX_NAME)
     last_error = win32api.GetLastError()
+
     if last_error == winerror.ERROR_ALREADY_EXISTS:
-        log.info("[START] HotTurkey is already running, exiting this instance.")
-        return
+        # Another instance is running. Signal it to exit, then wait until it has
+        # released the mutex so we don't start a second tray/monitor.
+        log.info("[START] HotTurkey is already running, requesting restart...")
+        try:
+            with open(_PID_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            existing = win32event.OpenEvent(
+                win32event.EVENT_MODIFY_STATE, False, f"HotTurkeyShutdown_{old_pid}"
+            )
+            win32event.SetEvent(existing)
+        except Exception:
+            log.info("[START] Could not signal existing instance; exiting to avoid two instances.")
+            return
+
+        # Wait until the old process has exited (it will close its mutex handle).
+        # We release our handle and re-create the mutex; once we get it without
+        # ALREADY_EXISTS, we are the only instance.
+        for _ in range(15):
+            time.sleep(1)
+            try:
+                win32api.CloseHandle(_single_instance_mutex)
+            except Exception:
+                pass
+            _single_instance_mutex = win32event.CreateMutex(None, False, _MUTEX_NAME)
+            last_error = win32api.GetLastError()
+            if last_error != winerror.ERROR_ALREADY_EXISTS:
+                break
+        if last_error == winerror.ERROR_ALREADY_EXISTS:
+            log.info("[START] Existing instance did not exit in time; exiting.")
+            return
 
     log.info("============================================================")
     log.info("[START] HotTurkey starting...")
+
+    # Record our PID and create our own shutdown event so a future restart
+    # can signal this process only (avoids new instance seeing old event).
+    pid = os.getpid()
+    os.makedirs(os.path.dirname(_PID_FILE), exist_ok=True)
+    with open(_PID_FILE, "w") as f:
+        f.write(str(pid))
+    _shutdown_event = win32event.CreateEvent(
+        None, False, False, f"HotTurkeyShutdown_{pid}"
+    )
 
     def on_quit():
         global _running
@@ -121,10 +175,18 @@ def main():
     icon_thread = threading.Thread(target=icon.run, daemon=True)
     icon_thread.start()
 
-    # Main thread just sleeps and waits for Ctrl+C
+    # Main thread waits for either Ctrl+C or a shutdown event from a new run.
     try:
         while _running:
-            time.sleep(0.5)
+            # Wait up to 500ms for the shutdown event; timeout keeps Ctrl+C responsive.
+            if _shutdown_event is not None:
+                rc = win32event.WaitForSingleObject(_shutdown_event, 500)
+                if rc == win32event.WAIT_OBJECT_0:
+                    log.info("[STOP] Restart requested, shutting down...")
+                    _running = False
+                    break
+            else:
+                time.sleep(0.5)
     except KeyboardInterrupt:
         log.info("[STOP] Ctrl+C received, shutting down...")
 

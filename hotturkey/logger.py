@@ -37,6 +37,12 @@ class ColorFormatter(logging.Formatter):
         if "[BUDGET]" in base_message:
             if " full " in base_message:
                 color = BLUE
+            # Treat overtime accumulation as red, even though it uses a '+'
+            # sign in the text (e.g. '+10.0s overtime').
+            elif "overtime repaid" in base_message:
+                color = GREEN
+            elif "overtime" in base_message:
+                color = RED
             elif "+" in base_message:
                 color = GREEN
             elif "-" in base_message:

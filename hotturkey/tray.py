@@ -58,15 +58,17 @@ def _on_status(icon, item):
         return
     s = _state_ref
     remaining = _format_time(s.remaining_budget_seconds)
+    overtime = _format_time(getattr(s, "overtime_seconds", 0.0))
     total = _format_time(MAX_PLAY_BUDGET_SECONDS)
     activity = s.tracked_activity_name if s.is_tracked_activity_running else "None"
     session = _format_time(s.seconds_used_this_session) if s.is_tracked_activity_running else "N/A"
     msg = (
         f"HotTurkey Status"
         f" & echo."
-        f" & echo   Budget: {remaining} / {total}"
+        f" & echo   Budget:   {remaining} / {total}"
+        f" & echo   Overtime: {overtime}"
         f" & echo   Activity: {activity}"
-        f" & echo   Session: {session}"
+        f" & echo   Session:  {session}"
         f" & echo."
     )
     subprocess.Popen(

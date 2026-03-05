@@ -645,7 +645,6 @@ def update_budget(state):
             log.info(f"[SESSION] Started: {source_name}")
             state.current_session_start_timestamp = now
             state.seconds_used_this_session = 0.0
-            state.has_shown_gentle_reminder = False
 
         state.is_tracked_activity_running = True
         state.tracked_activity_name = source_name

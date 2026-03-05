@@ -7,13 +7,7 @@ MAX_PLAY_BUDGET_SECONDS = 3600
 BUDGET_RECOVERY_PER_SECOND_IDLE = 0.5
 # How often the app checks if a game or site is focused (in seconds)
 DETECTION_POLL_INTERVAL_SECONDS = 10
-# A quick flash reminder appears after this many seconds of play (1800 = 30 min)
-GENTLE_REMINDER_AFTER_SECONDS = 1800
-# How long the flash reminder stays on screen (in seconds)
-GENTLE_REMINDER_VISIBLE_SECONDS = 2
-# After budget hits 0, wait this long before the first fullscreen popup (1800 = 30 min)
-FIRST_OVERTIME_POPUP_DELAY_SECONDS = 1800
-# Each overtime popup comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...)
+# Each overtime popup level comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...)
 OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 # Overtime popups won't come faster than this (in seconds)
 OVERTIME_MIN_INTERVAL_SECONDS = 60
@@ -27,9 +21,6 @@ AFK_IDLE_THRESHOLD_SECONDS = 300
 # MAX_PLAY_BUDGET_SECONDS = 300
 # BUDGET_RECOVERY_PER_SECOND_IDLE = 0.5
 # DETECTION_POLL_INTERVAL_SECONDS = 5
-# GENTLE_REMINDER_AFTER_SECONDS = 1800
-# GENTLE_REMINDER_VISIBLE_SECONDS = 2
-# FIRST_OVERTIME_POPUP_DELAY_SECONDS = 150
 # OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 # OVERTIME_MIN_INTERVAL_SECONDS = 5
 

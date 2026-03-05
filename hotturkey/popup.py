@@ -1,28 +1,14 @@
-# popup.py -- Spawns terminal popup windows to annoy you into stopping.
-# Two types: a quick flash (gentle reminder) and a fullscreen red warning (overtime).
+# popup.py -- Spawns fullscreen red terminal popups when you're in overtime.
 
 import subprocess
 import time
 
 from hotturkey.config import (
-    GENTLE_REMINDER_AFTER_SECONDS,
-    GENTLE_REMINDER_VISIBLE_SECONDS,
     MAX_PLAY_BUDGET_SECONDS,
     OVERTIME_INTERVAL_DECAY_FACTOR,
     OVERTIME_MIN_INTERVAL_SECONDS,
 )
 from hotturkey.logger import log
-
-
-def show_flash_popup(message):
-    """Open a small terminal window that shows a message and auto-closes after a few seconds."""
-    timeout = GENTLE_REMINDER_VISIBLE_SECONDS
-    cmd = f'echo. & echo  {message} & echo. & timeout /t {timeout} /nobreak >nul'
-    subprocess.Popen(
-        ["cmd", "/c", cmd],
-        creationflags=subprocess.CREATE_NEW_CONSOLE,
-    )
-    log.info(f"[POPUP] Flash: {message}")
 
 
 def show_fullscreen_popup(message):
@@ -50,23 +36,11 @@ def format_time(seconds):
 
 
 def check_and_trigger_popups(state):
-    """Called every poll cycle. Decides if a popup should appear right now:
-    - At 30 min used: a quick flash reminder (once per session)
-    - In overtime: fullscreen warnings based on how much *overtime* you've gone:
-        * Level 1  at 50% of your budget in overtime  (e.g. 30 min extra on a 60 min budget)
-        * Level 2  after half of that again          (e.g. +15 min more)
-        * Level 3  after half again, and so on."""
+    """Called every poll cycle. In overtime, show fullscreen warnings by level:
+    L1 at budget 0, L2 at 50% of budget in overtime, L3+ at halved steps."""
     now = time.time()
 
     is_active = state.is_tracked_activity_running
-
-    # Gentle flash reminder at the halfway mark
-    if (state.seconds_used_this_session >= GENTLE_REMINDER_AFTER_SECONDS
-            and not state.has_shown_gentle_reminder):
-        state.has_shown_gentle_reminder = True
-        used = format_time(state.seconds_used_this_session)
-        remaining = format_time(state.remaining_budget_seconds)
-        show_flash_popup(f"You've been on for {used}. {remaining} remaining.")
 
     # Overtime popups based on how much *overtime* we've accumulated.
     # We only start counting once budget is at/below 0.

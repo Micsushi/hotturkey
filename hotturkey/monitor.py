@@ -145,6 +145,13 @@ def recover_budget(state, elapsed_seconds):
     before = state.remaining_budget_seconds
     state.remaining_budget_seconds = min(cap, state.remaining_budget_seconds + recovered)
     gained = state.remaining_budget_seconds - before
+
+    # If we've fully recovered back to the normal cap, reset the overtime
+    # escalation cycle so future over-budget sessions start fresh.
+    if state.remaining_budget_seconds >= MAX_PLAY_BUDGET_SECONDS:
+        state.overtime_escalation_level = 0
+        state.overtime_next_popup_timestamp = 0.0
+
     # Only log when something actually changed, to avoid noisy "+0.0s" entries,
     # e.g. on startup when virtually no time has elapsed.
     if gained > 0:
@@ -220,13 +227,11 @@ def update_budget(state):
         state.seconds_used_this_session += elapsed_seconds
         consume_budget(state, elapsed_seconds)
     else:
-        # End the session and reset overtime if we were previously active
+        # End the session if we were previously active; overtime cycle is now
+        # only reset when budget has fully recovered back to the cap.
         if state.is_tracked_activity_running:
             log.info(f"[SESSION] Ended: {state.tracked_activity_name} "
                      f"(used {state.seconds_used_this_session:.0f}s)")
-            state.overtime_escalation_level = 0
-            state.overtime_next_popup_timestamp = 0.0
-
         state.is_tracked_activity_running = False
         state.tracked_activity_name = ""
         recover_budget(state, elapsed_seconds)

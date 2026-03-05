@@ -16,6 +16,8 @@ from hotturkey.config import (
     MAX_PLAY_BUDGET_SECONDS,
     BUDGET_RECOVERY_PER_SECOND_IDLE,
     DETECTION_POLL_INTERVAL_SECONDS,
+    BONUS_SITES,
+    BONUS_RECOVERY_MULTIPLIER,
 )
 from hotturkey.logger import log
 from hotturkey.state import load_extra_minutes_pending, save_extra_minutes_pending
@@ -104,23 +106,44 @@ def detect_tracked_site_focused(foreground_title):
     return ""
 
 
+def detect_bonus_site_focused(foreground_title):
+    """Check if the focused window is a 'bonus' (productive) site.
+    Returns a simple label like 'Leetcode' or empty string if no match."""
+    title_lower = foreground_title.lower()
+    for site in BONUS_SITES:
+        if site in title_lower:
+            # Capitalize the keyword for display (e.g. 'leetcode' -> 'Leetcode').
+            return site.replace("-", " ").title()
+    return ""
+
+
 def detect_tracked_activity():
     """The main detection function. Checks the focused window against all detectors.
-    Returns (is_active, source_name) where source_name is a human-readable label."""
+    Returns (mode, source_name) where mode is one of:
+      - 'consume' : tracked entertainment (Steam / tracked sites)
+      - 'bonus'   : productive / bonus sites (faster recovery)
+      - 'idle'    : nothing relevant focused
+    """
     foreground_pid, foreground_title = get_foreground_window_info()
+
+    # Bonus / productive sites first: we don't want to consume budget here.
+    bonus_label = detect_bonus_site_focused(foreground_title)
+    if bonus_label:
+        log.info(f"[BONUS] {bonus_label} is focused")
+        return "bonus", bonus_label
 
     steam_game_name = detect_steam_game_focused(foreground_pid)
     if steam_game_name:
         log.info(f"[GAMING] {steam_game_name} is focused")
-        return True, f"Steam: {steam_game_name}"
+        return "consume", f"Steam: {steam_game_name}"
 
     browser_match = detect_tracked_site_focused(foreground_title)
     if browser_match:
         log.info(f"[WATCHING] {browser_match} is focused")
-        return True, browser_match
+        return "consume", browser_match
 
     log.debug("[IDLE] No tracked activity focused")
-    return False, ""
+    return "idle", ""
 
 
 # --- Budget logic ---
@@ -267,9 +290,9 @@ def update_budget(state):
 
     apply_pending_extra_time(state)
 
-    is_active, source_name = detect_tracked_activity()
+    mode, source_name = detect_tracked_activity()
 
-    if is_active:
+    if mode == "consume":
         # Start a new session if this is the first detection
         if not state.is_tracked_activity_running:
             log.info(f"[SESSION] Started: {source_name}")
@@ -285,10 +308,17 @@ def update_budget(state):
         # End the session if we were previously active; overtime cycle is now
         # only reset when budget has fully recovered back to the cap.
         if state.is_tracked_activity_running:
-            log.info(f"[SESSION] Ended: {state.tracked_activity_name} "
-                     f"(used {state.seconds_used_this_session:.0f}s)")
+            log.info(
+                f"[SESSION] Ended: {state.tracked_activity_name} "
+                f"(used {state.seconds_used_this_session:.0f}s)"
+            )
         state.is_tracked_activity_running = False
         state.tracked_activity_name = ""
-        recover_budget(state, elapsed_seconds)
 
-    return is_active, source_name
+        # Bonus sites give accelerated recovery instead of idle or consumption.
+        if mode == "bonus":
+            recover_budget(state, elapsed_seconds * BONUS_RECOVERY_MULTIPLIER)
+        else:
+            recover_budget(state, elapsed_seconds)
+
+    return mode != "idle", source_name

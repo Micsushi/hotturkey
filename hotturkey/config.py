@@ -4,9 +4,9 @@ import os
 # How many seconds of play/watch time you get (3600 = 1 hour)
 MAX_PLAY_BUDGET_SECONDS = 3600
 # How fast budget recovers when idle (0.5 = you need 2x the idle time to recover play time)
-BUDGET_RECOVERY_PER_SECOND_IDLE = 0.5
+BUDGET_RECOVERY_PER_SECOND_IDLE = 0.6666666666666666
 # How often the app checks if a game or site is focused (in seconds)
-DETECTION_POLL_INTERVAL_SECONDS = 5
+DETECTION_POLL_INTERVAL_SECONDS = 30
 # A quick flash reminder appears after this many seconds of play (1800 = 30 min)
 GENTLE_REMINDER_AFTER_SECONDS = 1800
 # How long the flash reminder stays on screen (in seconds)
@@ -16,7 +16,7 @@ FIRST_OVERTIME_POPUP_DELAY_SECONDS = 1800
 # Each overtime popup comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...)
 OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 # Overtime popups won't come faster than this (in seconds)
-OVERTIME_MIN_INTERVAL_SECONDS = 15
+OVERTIME_MIN_INTERVAL_SECONDS = 60
 
 # --- Testing values (swap back to production when done) ---
 # MAX_PLAY_BUDGET_SECONDS = 300

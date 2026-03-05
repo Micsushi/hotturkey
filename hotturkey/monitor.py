@@ -29,6 +29,9 @@ from hotturkey.state import load_extra_minutes_pending, save_extra_minutes_pendi
 # parent process tree changes later (common with launchers/anti-cheat).
 _KNOWN_STEAM_GAME_NAMES = set()
 
+# Width (in characters) of the ASCII budget bar shown in [BUDGET] logs.
+_BUDGET_BAR_WIDTH = 16
+
 def get_foreground_window_info():
     """Get the process ID and title of the window the user is currently looking at."""
     hwnd = win32gui.GetForegroundWindow()
@@ -122,13 +125,63 @@ def detect_tracked_activity():
 
 # --- Budget logic ---
 
+def _format_mmss(seconds: float) -> str:
+    """Format a number of seconds as MM:SS (e.g. 924 -> '15:24')."""
+    total = max(0, int(seconds))
+    minutes = total // 60
+    secs = total % 60
+    return f"{minutes}:{secs:02d}"
+
+
+def _format_budget_bar(state, is_recovering: bool) -> str:
+    """Return an ASCII bar representing how much of the budget is used.
+
+    Example: [██████░░░░░░░░] 25% used (recovering)
+             [████████████████] 100% used (overtime L2)
+    """
+    cap = float(MAX_PLAY_BUDGET_SECONDS) if MAX_PLAY_BUDGET_SECONDS > 0 else 1.0
+    remaining_clamped = max(0.0, min(state.remaining_budget_seconds, cap))
+    used_ratio = 1.0 - (remaining_clamped / cap)
+    used_ratio = max(0.0, min(1.0, used_ratio))
+
+    used_blocks = int(round(used_ratio * _BUDGET_BAR_WIDTH))
+    used_blocks = max(0, min(_BUDGET_BAR_WIDTH, used_blocks))
+
+    # Use plain ASCII characters so logs work on all Windows encodings.
+    # '#' = used time, '-' = remaining time.
+    bar = "#" * used_blocks + "-" * (_BUDGET_BAR_WIDTH - used_blocks)
+    percent = int(round(used_ratio * 100))
+
+    # Suffix describing state: overtime vs recovering vs full/normal.
+    suffix_parts = []
+    if state.remaining_budget_seconds <= 0:
+        # We are in overtime; escalation level 0 means we've just hit 0 for
+        # the first time and the first popup is about to be scheduled.
+        level = state.overtime_escalation_level or 1
+        suffix_parts.append(f"overtime L{level}")
+    elif is_recovering:
+        if percent == 0:
+            suffix_parts.append("full")
+        else:
+            suffix_parts.append("recovering")
+
+    suffix = ""
+    if suffix_parts:
+        suffix = " (" + ", ".join(suffix_parts) + ")"
+
+    return f"[{bar}] {percent:3d}% used{suffix}"
+
 def consume_budget(state, elapsed_seconds):
     """Subtract play time from budget. Budget stops at 0, never goes negative."""
     before = state.remaining_budget_seconds
     state.remaining_budget_seconds = max(0.0, state.remaining_budget_seconds - elapsed_seconds)
     spent = before - state.remaining_budget_seconds
-    if spent > 0:
-        log.info(f"[BUDGET] -{spent:.1f}s consumed, {state.remaining_budget_seconds:.0f}s remaining")
+    bar = _format_budget_bar(state, is_recovering=False)
+    remaining_str = _format_mmss(state.remaining_budget_seconds)
+    log.info(
+        f"[BUDGET] | -{spent:.1f}s consumed | "
+        f"{remaining_str} remaining | {bar}"
+    )
 
 
 def recover_budget(state, elapsed_seconds):
@@ -152,10 +205,12 @@ def recover_budget(state, elapsed_seconds):
         state.overtime_escalation_level = 0
         state.overtime_next_popup_timestamp = 0.0
 
-    # Only log when something actually changed, to avoid noisy "+0.0s" entries,
-    # e.g. on startup when virtually no time has elapsed.
-    if gained > 0:
-        log.info(f"[BUDGET] +{gained:.1f}s recovered, {state.remaining_budget_seconds:.0f}s remaining")
+    bar = _format_budget_bar(state, is_recovering=True)
+    remaining_str = _format_mmss(state.remaining_budget_seconds)
+    log.info(
+        f"[BUDGET] | +{gained:.1f}s recovered | "
+        f"{remaining_str} remaining | {bar}"
+    )
 
 
 def apply_pending_extra_time(state):

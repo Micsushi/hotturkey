@@ -42,6 +42,11 @@ class AppState:
         # Extra minutes added via "hotturkey extra X" CLI, waiting to be picked up
         self.extra_minutes_pending_from_cli = 0.0
 
+        # Steam game executables we've learned across runs. This lets the app
+        # remember which exes should always be treated as Steam games, even if
+        # their process tree changes or the launcher is missed once.
+        self.known_steam_game_exes = []
+
     def to_dict(self):
         """Convert this object to a plain dictionary so it can be saved as JSON."""
         return {
@@ -55,6 +60,7 @@ class AppState:
             "overtime_escalation_level": self.overtime_escalation_level,
             "overtime_next_popup_timestamp": self.overtime_next_popup_timestamp,
             "extra_minutes_pending_from_cli": self.extra_minutes_pending_from_cli,
+            "known_steam_game_exes": self.known_steam_game_exes,
         }
 
     def from_dict(self, data):
@@ -70,6 +76,7 @@ class AppState:
         self.overtime_escalation_level = data.get("overtime_escalation_level", 0)
         self.overtime_next_popup_timestamp = data.get("overtime_next_popup_timestamp", 0.0)
         self.extra_minutes_pending_from_cli = data.get("extra_minutes_pending_from_cli", 0.0)
+        self.known_steam_game_exes = data.get("known_steam_game_exes", [])
 
 
 def load_state():

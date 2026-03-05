@@ -13,7 +13,7 @@ import win32api
 import win32event
 import winerror
 
-from hotturkey.config import DETECTION_POLL_INTERVAL_SECONDS
+from hotturkey.config import DETECTION_POLL_INTERVAL_SECONDS, MAX_PLAY_BUDGET_SECONDS
 from hotturkey.state import load_state, save_state
 from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
@@ -28,6 +28,14 @@ _running = True
 # HotTurkey process runs at a time.
 _single_instance_mutex = None
 _MUTEX_NAME = "HotTurkeySingleton"
+
+
+def _format_mmss(seconds: float) -> str:
+    """Format a number of seconds as MM:SS (e.g. 2149 -> '35:49')."""
+    total = max(0, int(seconds))
+    minutes = total // 60
+    secs = total % 60
+    return f"{minutes}:{secs:02d}"
 
 
 def monitor_loop():
@@ -45,13 +53,40 @@ def monitor_loop():
     state.tracked_activity_name = ""
     state.last_poll_timestamp = time.time()
 
-    log.info(f"[START] Budget: {state.remaining_budget_seconds:.0f}s")
+    remaining_str = _format_mmss(state.remaining_budget_seconds)
+    max_str = _format_mmss(MAX_PLAY_BUDGET_SECONDS)
+    log.info(f"[START] Budget: {remaining_str} / {max_str}")
+    log.debug(f"[DEBUG] Poll interval: {DETECTION_POLL_INTERVAL_SECONDS}s")
 
     while _running:
+        loop_start = time.time()
+
+        t0 = time.time()
         update_budget(state)
+        t1 = time.time()
+
+        t2 = time.time()
         check_and_trigger_popups(state)
+        t3 = time.time()
+
+        t4 = time.time()
         update_tray_icon(state)
+        t5 = time.time()
+
+        t6 = time.time()
         save_state(state)
+        t7 = time.time()
+
+        body_ms = (time.time() - loop_start) * 1000.0
+        log.debug(
+            "[PERF] Loop: "
+            f"update_budget={ (t1 - t0) * 1000.0:.1f}ms, "
+            f"popups={ (t3 - t2) * 1000.0:.1f}ms, "
+            f"tray={ (t5 - t4) * 1000.0:.1f}ms, "
+            f"save_state={ (t7 - t6) * 1000.0:.1f}ms, "
+            f"total_body={ body_ms:.1f}ms"
+        )
+
         time.sleep(DETECTION_POLL_INTERVAL_SECONDS)
 
     save_state(state)

@@ -6,7 +6,7 @@ MAX_PLAY_BUDGET_SECONDS = 3600
 # How fast budget recovers when idle (0.5 = you need 2x the idle time to recover play time)
 BUDGET_RECOVERY_PER_SECOND_IDLE = 0.5
 # How often the app checks if a game or site is focused (in seconds)
-DETECTION_POLL_INTERVAL_SECONDS = 30
+DETECTION_POLL_INTERVAL_SECONDS = 10
 # A quick flash reminder appears after this many seconds of play (1800 = 30 min)
 GENTLE_REMINDER_AFTER_SECONDS = 1800
 # How long the flash reminder stays on screen (in seconds)
@@ -17,6 +17,11 @@ FIRST_OVERTIME_POPUP_DELAY_SECONDS = 1800
 OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 # Overtime popups won't come faster than this (in seconds)
 OVERTIME_MIN_INTERVAL_SECONDS = 60
+
+# If there is no keyboard or mouse input for this many seconds, the user is
+# considered AFK. While AFK, budget neither recovers nor is consumed unless a
+# tracked activity (YouTube / game) is focused.
+AFK_IDLE_THRESHOLD_SECONDS = 300
 
 # --- Testing values (swap back to production when done) ---
 # MAX_PLAY_BUDGET_SECONDS = 300
@@ -44,6 +49,7 @@ STEAM_HELPER_PROCESS_NAMES = {
     "steamservice.exe",
     "steamwebhelper.exe",
     "gameoverlayui.exe",
+    "gameoverlayui64.exe",
     "steamerrorreporter.exe",
     "streaming_client.exe",
     "steamvr_room_setup.exe",

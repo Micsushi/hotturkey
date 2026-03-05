@@ -11,18 +11,21 @@ from hotturkey.config import STATE_DIR, LOG_FILE
 # Simplified ANSI colors:
 # - Green for budget recovery
 # - Red for budget consumption
+# - Blue for "full budget" lines
 # - Cyan for everything else
 GREEN = "\033[92m"
 RED = "\033[91m"
+BLUE = "\033[94m"
 CYAN = "\033[96m"
 RESET = "\033[0m"
 
 
 class ColorFormatter(logging.Formatter):
     """Adds ANSI colors to console log lines:
-    - [BUDGET] with '-' => red (consumed)
-    - [BUDGET] with '+' => green (recovered)
-    - everything else    => cyan
+    - [BUDGET] with '-'      => red (consumed)
+    - [BUDGET] with '+'      => green (recovered)
+    - [BUDGET] with ' full ' => blue  (fully refilled)
+    - everything else        => cyan
     """
 
     def format(self, record):
@@ -32,7 +35,9 @@ class ColorFormatter(logging.Formatter):
         base_message = record.getMessage()
         color = None
         if "[BUDGET]" in base_message:
-            if "+" in base_message:
+            if " full " in base_message:
+                color = BLUE
+            elif "+" in base_message:
                 color = GREEN
             elif "-" in base_message:
                 color = RED
@@ -61,6 +66,9 @@ def setup_logger():
     os.makedirs(STATE_DIR, exist_ok=True)
 
     logger = logging.getLogger("hotturkey")
+    # Default to INFO for normal, concise logs. Debug-level lines (including
+    # PERF diagnostics) stay in the code but are hidden unless you manually
+    # raise the level to DEBUG when troubleshooting.
     logger.setLevel(logging.INFO)
 
     base_format = "%(asctime)s  %(message)s"

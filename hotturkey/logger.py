@@ -5,8 +5,8 @@
 #
 # Logging convention: every line starts with [TAG] for easy grep/parsing.
 # Standard tags: START, STOP, BUDGET, COMMAND (extra/set/reset/start/quit), SESSION, IDLE,
-# GAMING, WATCHING, BONUS, POPUP, TRAY, PERF, DEBUG.
-# Use log_event(tag, **kwargs) for structured lines: [TAG] key=value key=value
+# FOCUS (e.g. "other apps" when leaving a tracked window), GAMING, WATCHING, BONUS, POPUP, TRAY, PERF, DEBUG.
+# Use log_event(tag, message="...") for human-readable lines, or log_event(tag, key=val, ...) for key=value.
 
 import logging
 import os
@@ -104,7 +104,11 @@ def setup_logger():
 log = setup_logger()
 
 
-def log_event(tag, **kwargs):
-    """Log a single line as [TAG] key=value key=value for consistent, parseable output."""
-    parts = " ".join(f"{k}={v}" for k, v in kwargs.items())
-    log.info(f"[{tag}] {parts}")
+def log_event(tag, message=None, **kwargs):
+    """Log a single line. If message is set, logs [TAG] message (human-readable).
+    Otherwise logs [TAG] key=value key=value for parseable output."""
+    if message is not None:
+        log.info(f"[{tag}] {message}")
+    else:
+        parts = " ".join(f"{k}={v}" for k, v in kwargs.items())
+        log.info(f"[{tag}] {parts}")

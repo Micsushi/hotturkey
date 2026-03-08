@@ -50,6 +50,9 @@ _BUDGET_BAR_WIDTH = 16
 # Track AFK state so we can log transitions cleanly.
 _was_afk = False
 
+# Only log WATCHING/BONUS/GAMING when the focused activity changes, not every poll.
+_last_focused_activity = None
+
 # Ensure we only hydrate _KNOWN_STEAM_GAME_NAMES from state once.
 _steam_known_initialized = False
 
@@ -156,7 +159,7 @@ def refresh_known_steam_games(state):
                 _KNOWN_STEAM_GAME_NAMES.add(lname)
                 if lname not in (ex.lower() for ex in state.known_steam_game_exes):
                     state.known_steam_game_exes.append(lname)
-                log_event("GAMING", event="learned", exe=name)
+                log_event("GAMING", message=f"learned: {name}")
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
         # Best-effort only; failures here shouldn't break the main loop.
         pass
@@ -230,17 +233,14 @@ def detect_tracked_activity():
     # Bonus / productive sites first: we don't want to consume budget here.
     bonus_label = detect_bonus_site_focused(foreground_title)
     if bonus_label:
-        log_event("BONUS", activity=bonus_label, status="focused")
         return "bonus", bonus_label
 
     steam_game_name = detect_steam_game_focused(foreground_pid)
     if steam_game_name:
-        log_event("GAMING", activity=steam_game_name, status="focused")
         return "consume", f"Steam: {steam_game_name}"
 
     browser_match = detect_tracked_site_focused(foreground_title)
     if browser_match:
-        log_event("WATCHING", activity=browser_match, status="focused")
         return "consume", browser_match
 
     log.debug("[IDLE] status=no_activity")
@@ -620,9 +620,9 @@ def update_budget(state):
     idle_check_end = time.time()
 
     if is_afk and not _was_afk:
-        log_event("IDLE", event="afk", threshold_s=AFK_IDLE_THRESHOLD)
+        log_event("IDLE", message=f"afk (idle {AFK_IDLE_THRESHOLD}s)")
     elif not is_afk and _was_afk:
-        log_event("IDLE", event="resumed")
+        log_event("IDLE", message="resumed")
     _was_afk = is_afk
 
     # Keep the known Steam game list fresh so we don't miss exes whose
@@ -641,11 +641,33 @@ def update_budget(state):
     mode, source_name = detect_tracked_activity()
     detect_end = time.time()
 
+    # Log focus changes: entering an activity (BONUS/WATCHING/GAMING) or leaving to idle.
+    global _last_focused_activity
+    if mode == "idle":
+        if _last_focused_activity is not None:
+            log_event("FOCUS", message="other apps")
+        _last_focused_activity = None
+    elif source_name != _last_focused_activity:
+        _last_focused_activity = source_name
+        if mode == "bonus":
+            log_event("BONUS", message=f"{source_name} focused")
+        elif mode == "consume":
+            if source_name.startswith("Steam:"):
+                log_event("GAMING", message=f"{source_name.replace('Steam: ', '')} focused")
+            else:
+                log_event("WATCHING", message=f"{source_name} focused")
+
     if mode == "consume":
         is_steam_session = source_name.startswith("Steam:")
+        # End previous session if switching to a different activity
+        if state.is_tracked_activity_running and state.tracked_activity_name != source_name:
+            used_s = int(state.seconds_used_this_session)
+            log_event("SESSION", message=f"session ended: {state.tracked_activity_name}, {used_s}s used")
+            state.is_tracked_activity_running = False
+            state.tracked_activity_name = ""
         # Start a new session if this is the first detection
         if not state.is_tracked_activity_running:
-            log_event("SESSION", event="started", activity=source_name)
+            log_event("SESSION", message=f"session started: {source_name}")
             state.current_session_start_timestamp = now
             state.seconds_used_this_session = 0.0
 
@@ -662,29 +684,39 @@ def update_budget(state):
         else:
             state.seconds_used_this_session += elapsed_seconds
             consume_budget(state, elapsed_seconds)
+    elif mode == "bonus":
+        # End previous session if switching to a different activity
+        if state.is_tracked_activity_running and state.tracked_activity_name != source_name:
+            used_s = int(state.seconds_used_this_session)
+            log_event("SESSION", message=f"session ended: {state.tracked_activity_name}, {used_s}s used")
+            state.is_tracked_activity_running = False
+            state.tracked_activity_name = ""
+        # Bonus sites get sessions too (started/ended like consume).
+        if not state.is_tracked_activity_running:
+            log_event("SESSION", message=f"session started: {source_name}")
+            state.current_session_start_timestamp = now
+            state.seconds_used_this_session = 0.0
+        state.is_tracked_activity_running = True
+        state.tracked_activity_name = source_name
+        state.seconds_used_this_session += elapsed_seconds
+        if not is_afk:
+            recover_budget(state, elapsed_seconds * BONUS_RECOVERY_MULTIPLIER)
     else:
         # End the session if we were previously active; overtime cycle is now
         # only reset when budget has fully recovered back to the cap.
         if state.is_tracked_activity_running:
+            used_s = int(state.seconds_used_this_session)
             log_event(
                 "SESSION",
-                event="ended",
-                activity=state.tracked_activity_name,
-                used_s=int(state.seconds_used_this_session),
+                message=f"session ended: {state.tracked_activity_name}, {used_s}s used",
             )
         state.is_tracked_activity_running = False
         state.tracked_activity_name = ""
 
-        # When AFK, we freeze budget during idle/bonus time so you don't farm
-        # recovery just by leaving the PC untouched. Active tracked sessions
-        # (mode == "consume") ignore AFK so passive watching / controller play
-        # still counts.
+        # When AFK, we freeze budget during idle so you don't farm
+        # recovery just by leaving the PC untouched.
         if not is_afk:
-            # Bonus sites give accelerated recovery instead of idle or consumption.
-            if mode == "bonus":
-                recover_budget(state, elapsed_seconds * BONUS_RECOVERY_MULTIPLIER)
-            else:
-                recover_budget(state, elapsed_seconds)
+            recover_budget(state, elapsed_seconds)
 
     perf_total = (time.time() - perf_start) * 1000.0
     log.debug(

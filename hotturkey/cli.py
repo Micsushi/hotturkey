@@ -7,10 +7,11 @@
 import argparse
 import sys
 
-from hotturkey.config import MAX_PLAY_BUDGET
+from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY
 from hotturkey.state import (
     load_state,
     load_extra_minutes_pending,
+    load_extra_minutes_given_today,
     save_extra_minutes_pending,
     save_set_minutes,
 )
@@ -47,10 +48,22 @@ def handle_status():
 
 def handle_extra(minutes):
     """Add or remove minutes from the budget. Positive adds, negative deducts.
-    Works whether the app is running or not. Budget never goes below 0 when deducting."""
+    Works whether the app is running or not. Budget never goes below 0 when deducting.
+    Positive extra is capped by MAX_EXTRA_MINUTES_PER_DAY (resets each day)."""
     if minutes == 0:
         print("  Minutes can't be 0.")
         sys.exit(1)
+
+    if minutes > 0:
+        given_today = load_extra_minutes_given_today()
+        pending_minutes = load_extra_minutes_pending()
+        remaining_cap = max(0.0, MAX_EXTRA_MINUTES_PER_DAY - given_today - pending_minutes)
+        if remaining_cap <= 0:
+            print(f"  Daily extra-minutes limit reached ({MAX_EXTRA_MINUTES_PER_DAY} min/day). Try again tomorrow.")
+            sys.exit(1)
+        if minutes > remaining_cap:
+            minutes = remaining_cap
+            print(f"  Capped to {minutes:.0f} min (daily limit {MAX_EXTRA_MINUTES_PER_DAY} min).")
 
     state = load_state()
     pending_minutes = load_extra_minutes_pending()

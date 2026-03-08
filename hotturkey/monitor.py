@@ -28,6 +28,7 @@ from hotturkey.logger import log
 from hotturkey.state import (
     load_extra_minutes_pending,
     save_extra_minutes_pending,
+    add_extra_minutes_given_today,
     load_set_minutes,
     save_set_minutes,
 )
@@ -516,6 +517,10 @@ def apply_pending_extra_time(state):
             f"{state.remaining_budget_seconds:.0f}s remaining, "
             f"debt {state.overtime_seconds:.0f}s"
         )
+
+    # Record positive extra against the daily cap (so CLI can enforce limit).
+    if pending_minutes > 0:
+        add_extra_minutes_given_today(pending_minutes)
 
     # Clear the pending value so we don't apply it again on the next poll.
     save_extra_minutes_pending(0.0)

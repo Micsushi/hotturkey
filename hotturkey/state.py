@@ -4,6 +4,7 @@
 import json
 import os
 import time
+from datetime import date
 
 from hotturkey.config import STATE_DIR, STATE_FILE, MAX_PLAY_BUDGET
 
@@ -106,24 +107,60 @@ def save_state(state):
 EXTRA_FILE = os.path.join(STATE_DIR, "extra.json")
 
 
-def load_extra_minutes_pending():
-    """Return minutes of extra time requested via the CLI but not yet applied.
-    Stored separately from state.json so CLI can work whether the app is running or not."""
+def _load_extra_data():
+    """Load full extra.json; return dict with defaults for missing keys."""
     if not os.path.exists(EXTRA_FILE):
-        return 0.0
+        return {"extra_minutes_pending_from_cli": 0.0, "extra_minutes_given_today": 0.0, "extra_minutes_date": ""}
     try:
         with open(EXTRA_FILE, "r") as f:
             data = json.load(f)
-        return float(data.get("extra_minutes_pending_from_cli", 0.0))
+        data.setdefault("extra_minutes_pending_from_cli", 0.0)
+        data.setdefault("extra_minutes_given_today", 0.0)
+        data.setdefault("extra_minutes_date", "")
+        return data
     except (json.JSONDecodeError, IOError, ValueError):
-        return 0.0
+        return {"extra_minutes_pending_from_cli": 0.0, "extra_minutes_given_today": 0.0, "extra_minutes_date": ""}
+
+
+def _save_extra_data(data):
+    """Write full extra.json."""
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(EXTRA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_extra_minutes_pending():
+    """Return minutes of extra time requested via the CLI but not yet applied.
+    Stored separately from state.json so CLI can work whether the app is running or not."""
+    return float(_load_extra_data().get("extra_minutes_pending_from_cli", 0.0))
 
 
 def save_extra_minutes_pending(minutes):
     """Persist pending extra minutes so the running app (or next run) can pick them up."""
-    os.makedirs(STATE_DIR, exist_ok=True)
-    with open(EXTRA_FILE, "w") as f:
-        json.dump({"extra_minutes_pending_from_cli": float(minutes)}, f, indent=2)
+    data = _load_extra_data()
+    data["extra_minutes_pending_from_cli"] = float(minutes)
+    _save_extra_data(data)
+
+
+def load_extra_minutes_given_today():
+    """Return how many extra minutes have been given today (applied by the monitor).
+    Returns 0 if the stored date is not today (e.g. new day)."""
+    data = _load_extra_data()
+    today_str = date.today().isoformat()
+    if data.get("extra_minutes_date") != today_str:
+        return 0.0
+    return float(data.get("extra_minutes_given_today", 0.0))
+
+
+def add_extra_minutes_given_today(minutes):
+    """Record that we applied this many positive extra minutes today. Call from monitor when applying."""
+    data = _load_extra_data()
+    today_str = date.today().isoformat()
+    if data.get("extra_minutes_date") != today_str:
+        data["extra_minutes_given_today"] = 0.0
+        data["extra_minutes_date"] = today_str
+    data["extra_minutes_given_today"] = float(data.get("extra_minutes_given_today", 0.0)) + float(minutes)
+    _save_extra_data(data)
 
 
 # --- Set-time helpers for CLI <-> monitor coordination ---

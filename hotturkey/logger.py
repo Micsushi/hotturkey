@@ -2,6 +2,11 @@
 # Other modules import "log" from here and use log.info(), log.debug(), etc.
 # Console output is color-coded by tag, file output stays plain text.
 # When running detached (no terminal), only the file handler is used.
+#
+# Logging convention: every line starts with [TAG] for easy grep/parsing.
+# Standard tags: START, STOP, BUDGET, COMMAND (extra/set/reset/start/quit), SESSION, IDLE,
+# GAMING, WATCHING, BONUS, POPUP, TRAY, PERF, DEBUG.
+# Use log_event(tag, **kwargs) for structured lines: [TAG] key=value key=value
 
 import logging
 import os
@@ -12,11 +17,14 @@ from hotturkey.config import STATE_DIR, LOG_FILE
 # - Green for budget recovery
 # - Red for budget consumption
 # - Blue for "full budget" lines
+# - Pastel yellow for [COMMAND] (user actions: extra, set, reset, start, quit)
 # - Cyan for everything else
 GREEN = "\033[92m"
 RED = "\033[91m"
 BLUE = "\033[94m"
 CYAN = "\033[96m"
+# Pastel yellow (256-color palette)
+PASTEL_YELLOW = "\033[38;5;227m"
 RESET = "\033[0m"
 
 
@@ -25,6 +33,7 @@ class ColorFormatter(logging.Formatter):
     - [BUDGET] with '-'      => red (consumed)
     - [BUDGET] with '+'      => green (recovered)
     - [BUDGET] with ' full ' => blue  (fully refilled)
+    - [COMMAND] => pastel yellow (extra, set, reset, start, quit)
     - everything else        => cyan
     """
 
@@ -34,18 +43,15 @@ class ColorFormatter(logging.Formatter):
         # budget consumption.
         base_message = record.getMessage()
         color = None
-        if "[BUDGET]" in base_message:
+        if "[COMMAND]" in base_message:
+            color = PASTEL_YELLOW
+        elif "[BUDGET]" in base_message:
             if " full " in base_message:
                 color = BLUE
-            # Treat overtime accumulation as red, even though it uses a '+'
-            # sign in the text (e.g. '+10.0s overtime').
-            elif "overtime repaid" in base_message:
+            # budget + or overtime - = repaying (green); budget - or overtime + = consuming (red)
+            elif "budget +" in base_message or "overtime -" in base_message:
                 color = GREEN
-            elif "overtime" in base_message:
-                color = RED
-            elif "+" in base_message:
-                color = GREEN
-            elif "-" in base_message:
+            elif "budget -" in base_message or "overtime +" in base_message:
                 color = RED
 
         message = super().format(record)
@@ -96,3 +102,9 @@ def setup_logger():
 
 # This runs once when the module is first imported, creating a shared logger
 log = setup_logger()
+
+
+def log_event(tag, **kwargs):
+    """Log a single line as [TAG] key=value key=value for consistent, parseable output."""
+    parts = " ".join(f"{k}={v}" for k, v in kwargs.items())
+    log.info(f"[{tag}] {parts}")

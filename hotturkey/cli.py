@@ -14,6 +14,7 @@ from hotturkey.state import (
     load_extra_minutes_given_today,
     save_extra_minutes_pending,
     save_set_minutes,
+    reset_state_to_default,
 )
 
 
@@ -146,6 +147,18 @@ def handle_set(minutes):
     print()
 
 
+def handle_reset():
+    """Reset all state to default: full budget, zero overtime, extra today cleared."""
+    reset_state_to_default()
+    total = _format_time(MAX_PLAY_BUDGET)
+    print()
+    print("  State reset to default.")
+    print(f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{MAX_EXTRA_MINUTES_PER_DAY}.")
+    print("  Pending extra and set commands cleared.")
+    print("  (Takes effect on next poll if app is running.)")
+    print()
+
+
 def main():
     """Parse command-line arguments and route to the right handler."""
     parser = argparse.ArgumentParser(prog="hotturkey", description="HotTurkey screen time enforcer")
@@ -159,6 +172,8 @@ def main():
     set_parser = subparsers.add_parser("set", help="Set budget to an exact number of minutes")
     set_parser.add_argument("minutes", type=float, help="Total minutes of budget to allow")
 
+    subparsers.add_parser("reset", help="Reset all state to default (full budget, zero overtime, extra today cleared)")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -167,6 +182,8 @@ def main():
         handle_extra(args.minutes)
     elif args.command == "set":
         handle_set(args.minutes)
+    elif args.command == "reset":
+        handle_reset()
     else:
         parser.print_help()
 

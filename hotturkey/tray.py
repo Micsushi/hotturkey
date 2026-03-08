@@ -7,8 +7,9 @@ import subprocess
 import pystray
 from PIL import Image, ImageDraw
 
-from hotturkey.config import MAX_PLAY_BUDGET, LOG_FILE
+from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY, LOG_FILE
 from hotturkey.logger import log
+from hotturkey.state import load_extra_minutes_given_today
 
 
 # Module-level references so update_tray_icon can reach the icon and state
@@ -60,15 +61,17 @@ def _on_status(icon, item):
     remaining = _format_time(s.remaining_budget_seconds)
     overtime = _format_time(getattr(s, "overtime_seconds", 0.0))
     total = _format_time(MAX_PLAY_BUDGET)
+    extra_today = int(load_extra_minutes_given_today())
     activity = s.tracked_activity_name if s.is_tracked_activity_running else "None"
     session = _format_time(s.seconds_used_this_session) if s.is_tracked_activity_running else "N/A"
     msg = (
         f"HotTurkey Status"
         f" & echo."
-        f" & echo   Budget:   {remaining} / {total}"
-        f" & echo   Overtime: {overtime}"
-        f" & echo   Activity: {activity}"
-        f" & echo   Session:  {session}"
+        f" & echo   Budget:      {remaining} / {total}"
+        f" & echo   Overtime:    {overtime}"
+        f" & echo   Extra today: {extra_today} / {MAX_EXTRA_MINUTES_PER_DAY} min"
+        f" & echo   Activity:    {activity}"
+        f" & echo   Session:     {session}"
         f" & echo."
     )
     subprocess.Popen(
@@ -93,7 +96,7 @@ def _on_show_logs(icon, item):
 
 def _on_quit(icon, item):
     """Right-click menu handler: shuts down the app."""
-    log.info("[TRAY] Quit requested")
+    log.info("[COMMAND] quit: user quit from tray.")
     if _quit_callback:
         _quit_callback()
     icon.stop()
@@ -122,7 +125,12 @@ def update_tray_icon(state):
         return
     _icon.icon = _build_icon_image(state.remaining_budget_seconds)
     remaining = _format_time(state.remaining_budget_seconds)
+    overtime = getattr(state, "overtime_seconds", 0.0)
+    debt_str = _format_time(overtime)
+    extra_today = int(load_extra_minutes_given_today())
+    extra_str = f"Extra: {extra_today}/{MAX_EXTRA_MINUTES_PER_DAY} today"
+    debt_part = f" | Debt: {debt_str}" if overtime > 0 else ""
     if state.is_tracked_activity_running:
-        _icon.title = f"HotTurkey: {remaining} left ({state.tracked_activity_name})"
+        _icon.title = f"HotTurkey: {remaining} left ({state.tracked_activity_name}) | {extra_str}{debt_part}"
     else:
-        _icon.title = f"HotTurkey: {remaining} remaining"
+        _icon.title = f"HotTurkey: {remaining} remaining | {extra_str}{debt_part}"

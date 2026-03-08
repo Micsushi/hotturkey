@@ -25,7 +25,7 @@ def show_fullscreen_popup(message):
     subprocess.Popen(
         ["cmd", "/c", "start", "", "/max", "cmd", "/c", cmd],
     )
-    log.info(f"[POPUP] Fullscreen: {message}")
+    log.info("[POPUP] event=fullscreen message=%s", message)
 
 
 def format_time(seconds):

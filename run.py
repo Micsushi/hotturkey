@@ -16,17 +16,20 @@ import winerror
 from hotturkey.config import (
     POLL_INTERVAL,
     MAX_PLAY_BUDGET,
+    MAX_EXTRA_MINUTES_PER_DAY,
     STATE_DIR,
 )
-from hotturkey.state import load_state, save_state
+from hotturkey.state import load_state, save_state, load_extra_minutes_given_today, check_and_clear_reload_flag
 from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
 from hotturkey.tray import create_tray_icon, update_tray_icon
-from hotturkey.logger import log
+from hotturkey.logger import log, log_event
 
 
 # Flag to tell threads to stop
 _running = True
+# Set to "restart" when shutting down due to restart request (reduces log noise)
+_shutdown_reason = None
 
 # Handle to a system-wide mutex so only one instance of the background
 # HotTurkey process runs at a time.
@@ -65,17 +68,27 @@ def monitor_loop():
 
     remaining_str = _format_mmss(state.remaining_budget_seconds)
     max_str = _format_mmss(MAX_PLAY_BUDGET)
-    # Show both remaining budget and any stored overtime debt on startup.
     overtime_seconds = getattr(state, "overtime_seconds", 0.0)
     overtime_str = _format_mmss(overtime_seconds)
-    if overtime_seconds > 0:
-        log.info(f"[START] Budget: {remaining_str} / {max_str}, overtime debt: {overtime_str}")
-    else:
-        log.info(f"[START] Budget: {remaining_str} / {max_str}")
-    log.debug(f"[DEBUG] Poll interval: {POLL_INTERVAL}s")
+    extra_today = load_extra_minutes_given_today()
+    log_event(
+        "START",
+        budget=f"{remaining_str}/{max_str}",
+        overtime=overtime_str,
+        extra_today=f"{int(extra_today)}/{MAX_EXTRA_MINUTES_PER_DAY}",
+    )
+    log.debug("[DEBUG] poll_interval_s=%s", POLL_INTERVAL)
 
     while _running:
         loop_start = time.time()
+
+        if check_and_clear_reload_flag():
+            state = load_state()
+            state.is_tracked_activity_running = False
+            state.tracked_activity_name = ""
+            state.last_poll_timestamp = time.time()
+            log.info("[COMMAND] reset: state to default.")
+            log_event("START", event="reloaded", budget=f"{_format_mmss(state.remaining_budget_seconds)}/{_format_mmss(MAX_PLAY_BUDGET)}")
 
         t0 = time.time()
         update_budget(state)
@@ -95,18 +108,19 @@ def monitor_loop():
 
         body_ms = (time.time() - loop_start) * 1000.0
         log.debug(
-            "[PERF] Loop: "
-            f"update_budget={ (t1 - t0) * 1000.0:.1f}ms, "
-            f"popups={ (t3 - t2) * 1000.0:.1f}ms, "
-            f"tray={ (t5 - t4) * 1000.0:.1f}ms, "
-            f"save_state={ (t7 - t6) * 1000.0:.1f}ms, "
-            f"total_body={ body_ms:.1f}ms"
+            "[PERF] update_budget_ms=%.1f popups_ms=%.1f tray_ms=%.1f save_state_ms=%.1f total_body_ms=%.1f",
+            (t1 - t0) * 1000.0,
+            (t3 - t2) * 1000.0,
+            (t5 - t4) * 1000.0,
+            (t7 - t6) * 1000.0,
+            body_ms,
         )
 
         time.sleep(POLL_INTERVAL)
 
     save_state(state)
-    log.info("[STOP] Monitor stopped, state saved.")
+    if _shutdown_reason != "restart":
+        log_event("STOP", event="monitor_stopped", state="saved")
 
 
 def main():
@@ -119,7 +133,7 @@ def main():
     if last_error == winerror.ERROR_ALREADY_EXISTS:
         # Another instance is running. Signal it to exit, then wait until it has
         # released the mutex so we don't start a second tray/monitor.
-        log.info("[START] HotTurkey is already running, requesting restart...")
+        log.info("[COMMAND] start: app already running, requesting restart.")
         try:
             with open(_PID_FILE, "r") as f:
                 old_pid = int(f.read().strip())
@@ -128,7 +142,7 @@ def main():
             )
             win32event.SetEvent(existing)
         except Exception:
-            log.info("[START] Could not signal existing instance; exiting to avoid two instances.")
+            log_event("START", event="could_not_signal", action="exiting")
             return
 
         # Wait until the old process has exited (it will close its mutex handle).
@@ -145,11 +159,10 @@ def main():
             if last_error != winerror.ERROR_ALREADY_EXISTS:
                 break
         if last_error == winerror.ERROR_ALREADY_EXISTS:
-            log.info("[START] Existing instance did not exit in time; exiting.")
+            log_event("START", event="existing_did_not_exit", action="exiting")
             return
 
-    log.info("============================================================")
-    log.info("[START] HotTurkey starting...")
+    log.info("[COMMAND] start: app started.")
 
     # Record our PID and create our own shutdown event so a future restart
     # can signal this process only (avoids new instance seeing old event).
@@ -182,18 +195,21 @@ def main():
             if _shutdown_event is not None:
                 rc = win32event.WaitForSingleObject(_shutdown_event, 500)
                 if rc == win32event.WAIT_OBJECT_0:
-                    log.info("[STOP] Restart requested, shutting down...")
+                    global _shutdown_reason
+                    _shutdown_reason = "restart"
+                    log.info("[COMMAND] restart: exiting.")
                     _running = False
                     break
             else:
                 time.sleep(0.5)
     except KeyboardInterrupt:
-        log.info("[STOP] Ctrl+C received, shutting down...")
+        log_event("STOP", event="ctrl_c")
 
     _running = False
     icon.stop()
     monitor_thread.join(timeout=10)
-    log.info("[STOP] HotTurkey shut down.")
+    if _shutdown_reason != "restart":
+        log_event("STOP", event="shutdown")
 
 
 if __name__ == "__main__":

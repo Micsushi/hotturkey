@@ -6,7 +6,7 @@ import os
 import time
 from datetime import date
 
-from hotturkey.config import STATE_DIR, STATE_FILE, MAX_PLAY_BUDGET
+from hotturkey.config import STATE_DIR, STATE_FILE, MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY
 
 
 class AppState:
@@ -102,7 +102,39 @@ def save_state(state):
         json.dump(state.to_dict(), f, indent=2)
 
 
-    # --- Extra-time helpers for CLI <-> monitor coordination ---
+RELOAD_STATE_FLAG = os.path.join(STATE_DIR, ".reload_state")
+
+
+def reset_state_to_default():
+    """Reset all state to default: full budget, zero overtime, extra today cleared,
+    pending extra/set cleared. Works whether the app is running or not.
+    If the app is running, it will reload state on the next poll."""
+    state = AppState()
+    state.last_poll_timestamp = time.time()
+    save_state(state)
+    _save_extra_data({
+        "extra_minutes_pending_from_cli": 0.0,
+        "extra_minutes_given_today": 0.0,
+        "extra_minutes_date": "",
+    })
+    save_set_minutes(0.0)
+    # Signal running monitor to reload state from disk on next poll
+    with open(RELOAD_STATE_FLAG, "w"):
+        pass
+
+
+def check_and_clear_reload_flag():
+    """If a reload was requested (e.g. after reset), remove the flag and return True."""
+    if os.path.exists(RELOAD_STATE_FLAG):
+        try:
+            os.remove(RELOAD_STATE_FLAG)
+        except OSError:
+            pass
+        return True
+    return False
+
+
+# --- Extra-time helpers for CLI <-> monitor coordination ---
 
 EXTRA_FILE = os.path.join(STATE_DIR, "extra.json")
 

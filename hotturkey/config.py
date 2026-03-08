@@ -26,6 +26,8 @@ OVERTIME_MIN_INTERVAL_SECONDS = 60
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".hotturkey")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
+# Single-line file overwritten each poll with current numbers (no repeated log lines)
+STATUS_FILE = os.path.join(STATE_DIR, "status.txt")
 
 STEAM_PROCESS_NAME = "steam.exe"
 
@@ -52,4 +54,4 @@ BONUS_SITES = [
     "leetcode", 
 ]
 
-BONUS_RECOVERY_MULTIPLIER = 2.0
+BONUS_RECOVERY_MULTIPLIER = 3.0

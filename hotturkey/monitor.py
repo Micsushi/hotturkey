@@ -16,6 +16,7 @@ from hotturkey.config import (
     TRACKED_BROWSERS,
     TRACKED_SITES,
     MAX_PLAY_BUDGET,
+    MAX_EXTRA_MINUTES_PER_DAY,
     BUDGET_RECOVERY_PER_SECOND_RATIO,
     POLL_INTERVAL,
     BONUS_SITES,
@@ -24,10 +25,11 @@ from hotturkey.config import (
     OVERTIME_INTERVAL_DECAY_FACTOR,
     OVERTIME_MIN_INTERVAL_SECONDS,
 )
-from hotturkey.logger import log
+from hotturkey.logger import log, log_event
 from hotturkey.state import (
     load_extra_minutes_pending,
     save_extra_minutes_pending,
+    load_extra_minutes_given_today,
     add_extra_minutes_given_today,
     load_set_minutes,
     save_set_minutes,
@@ -154,7 +156,7 @@ def refresh_known_steam_games(state):
                 _KNOWN_STEAM_GAME_NAMES.add(lname)
                 if lname not in (ex.lower() for ex in state.known_steam_game_exes):
                     state.known_steam_game_exes.append(lname)
-                log.info(f"[GAMING] Learned Steam game exe: {name}")
+                log_event("GAMING", event="learned", exe=name)
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
         # Best-effort only; failures here shouldn't break the main loop.
         pass
@@ -228,20 +230,20 @@ def detect_tracked_activity():
     # Bonus / productive sites first: we don't want to consume budget here.
     bonus_label = detect_bonus_site_focused(foreground_title)
     if bonus_label:
-        log.info(f"[BONUS] {bonus_label} is focused")
+        log_event("BONUS", activity=bonus_label, status="focused")
         return "bonus", bonus_label
 
     steam_game_name = detect_steam_game_focused(foreground_pid)
     if steam_game_name:
-        log.info(f"[GAMING] {steam_game_name} is focused")
+        log_event("GAMING", activity=steam_game_name, status="focused")
         return "consume", f"Steam: {steam_game_name}"
 
     browser_match = detect_tracked_site_focused(foreground_title)
     if browser_match:
-        log.info(f"[WATCHING] {browser_match} is focused")
+        log_event("WATCHING", activity=browser_match, status="focused")
         return "consume", browser_match
 
-    log.debug("[IDLE] No tracked activity focused")
+    log.debug("[IDLE] status=no_activity")
     return "idle", ""
 
 
@@ -280,7 +282,7 @@ def _overtime_level_from_debt(overtime_seconds: float) -> int:
 def _format_budget_bar(state, is_recovering: bool) -> str:
     """Return an ASCII bar representing how much of the budget is used.
 
-    Example: [██████░░░░░░░░] 25% used (recovering)
+    Example: [██████░░░░░░░░] 25% used (repaying budget)
              [████████████████] 100% used (overtime L2)
     """
     cap = float(MAX_PLAY_BUDGET) if MAX_PLAY_BUDGET > 0 else 1.0
@@ -306,17 +308,18 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
         overtime = getattr(state, "overtime_seconds", 0.0)
         if overtime > 0:
             level = _overtime_level_from_debt(overtime)
-            suffix_parts.append(f"overtime L{level}")
-            suffix_parts.append(f"debt {_format_mmss(overtime)}")
+            suffix_parts.append(f"overtime L{level} {_format_mmss(overtime)}")
     elif is_recovering:
         if percent == 0:
             suffix_parts.append("full")
         else:
-            suffix_parts.append("recovering")
+            suffix_parts.append("repaying budget")
+    else:
+        suffix_parts.append("consuming budget")
 
     suffix = ""
     if suffix_parts:
-        # Use pipe separators for all extra state info (overtime level, debt, etc.).
+        # Use pipe separators for all extra state info (overtime level, overtime, etc.).
         suffix = " | " + " | ".join(suffix_parts)
 
     return f"[{bar}] {percent:3d}% used{suffix}"
@@ -352,29 +355,15 @@ def consume_budget(state, elapsed_seconds):
 
     state.overtime_seconds = max(0.0, before_overtime + overtime_added)
 
-    # For the [BUDGET] line, distinguish between normal budget consumption and
-    # overtime accumulation so we never log "-0.0s consumed" when time was
-    # actually added to overtime.
     spent = max(0.0, before_budget - state.remaining_budget_seconds)
     bar = _format_budget_bar(state, is_recovering=False)
     remaining_str = _format_mmss(state.remaining_budget_seconds)
-    if spent > 0 and overtime_added > 0:
-        log.info(
-            f"[BUDGET] | -{spent:.1f}s consumed, +{overtime_added:.1f}s overtime | "
-            f"{remaining_str} remaining | {bar}"
-        )
-    elif spent > 0:
-        log.info(
-            f"[BUDGET] | -{spent:.1f}s consumed | "
-            f"{remaining_str} remaining | {bar}"
-        )
-    else:
-        # No normal budget spent this tick, but we may still have gone further
-        # into overtime.
-        log.info(
-            f"[BUDGET] | +{overtime_added:.1f}s overtime | "
-            f"{remaining_str} remaining | {bar}"
-        )
+    budget_delta = -spent
+    overtime_delta = overtime_added
+    log.info(
+        f"[BUDGET] | budget {budget_delta:+.1f}s | overtime {overtime_delta:+.1f}s | "
+        f"{remaining_str} remaining | {bar}"
+    )
 
 
 def recover_budget(state, elapsed_seconds):
@@ -424,32 +413,14 @@ def recover_budget(state, elapsed_seconds):
     if just_filled:
         state.overtime_escalation_level = 0
         state.overtime_next_popup_timestamp = 0.0
-        full_str = _format_mmss(state.remaining_budget_seconds)
-        full_bar = _format_budget_bar(state, is_recovering=True)
-        log.info(
-            f"[BUDGET] | full | "
-            f"{full_str} remaining | {full_bar}"
-        )
-        return
 
-    # Log what happened this tick.
     bar = _format_budget_bar(state, is_recovering=True)
     remaining_str = _format_mmss(state.remaining_budget_seconds)
-
-    if debt_paid > 0 and gained > 0:
-        # Split line: paid overtime and refilled budget in the same tick.
+    budget_delta = gained
+    overtime_delta = -debt_paid
+    if budget_delta != 0 or overtime_delta != 0:
         log.info(
-            f"[BUDGET] | +{debt_paid:.1f}s overtime repaid, +{gained:.1f}s recovered | "
-            f"{remaining_str} remaining | {bar}"
-        )
-    elif debt_paid > 0:
-        log.info(
-            f"[BUDGET] | +{debt_paid:.1f}s overtime repaid | "
-            f"{remaining_str} remaining | {bar}"
-        )
-    elif gained > 0:
-        log.info(
-            f"[BUDGET] | +{gained:.1f}s recovered | "
+            f"[BUDGET] | budget {budget_delta:+.1f}s | overtime {overtime_delta:+.1f}s | "
             f"{remaining_str} remaining | {bar}"
         )
 
@@ -487,14 +458,41 @@ def apply_pending_extra_time(state):
             state.remaining_budget_seconds = max(0.0, before_budget + extra_seconds)
             budget_delta = state.remaining_budget_seconds - before_budget
 
-        log.info(
-            "[EXTRA] "
-            f"+{pending_minutes:.1f}min applied "
-            f"(cleared {debt_cleared/60.0:.1f}min overtime, "
-            f"+{budget_delta/60.0:.1f}min budget), "
-            f"{state.remaining_budget_seconds:.0f}s remaining, "
-            f"debt {state.overtime_seconds:.0f}s"
-        )
+        # Record against daily cap before logging so extra_today shows the updated value.
+        if pending_minutes > 0:
+            add_extra_minutes_given_today(pending_minutes)
+
+        remaining_str = _format_mmss(state.remaining_budget_seconds)
+        debt_str = _format_mmss(state.overtime_seconds)
+        extra_today = int(load_extra_minutes_given_today())
+        if debt_cleared > 0 and budget_delta > 0:
+            log.info(
+                "[COMMAND] extra: +%.1f min (reduced overtime, +%.1f min to budget). Budget: %s, overtime: %s, extra today: %d/%d",
+                pending_minutes,
+                budget_delta / 60.0,
+                remaining_str,
+                debt_str,
+                extra_today,
+                MAX_EXTRA_MINUTES_PER_DAY,
+            )
+        elif debt_cleared > 0:
+            log.info(
+                "[COMMAND] extra: +%.1f min (reduced overtime). Budget: %s, overtime: %s, extra today: %d/%d",
+                pending_minutes,
+                remaining_str,
+                debt_str,
+                extra_today,
+                MAX_EXTRA_MINUTES_PER_DAY,
+            )
+        else:
+            log.info(
+                "[COMMAND] extra: +%.1f min to budget. Budget: %s, overtime: %s, extra today: %d/%d",
+                pending_minutes,
+                remaining_str,
+                debt_str,
+                extra_today,
+                MAX_EXTRA_MINUTES_PER_DAY,
+            )
     else:
         # Negative extra time: treat as taking time away. We subtract from
         # remaining budget first; if that would go below 0, the rest becomes
@@ -510,17 +508,17 @@ def apply_pending_extra_time(state):
             state.overtime_seconds = before_overtime + overdraw
             budget_delta = -before_budget
 
+        remaining_str = _format_mmss(state.remaining_budget_seconds)
+        debt_str = _format_mmss(state.overtime_seconds)
+        extra_today = int(load_extra_minutes_given_today())
         log.info(
-            "[EXTRA] "
-            f"{pending_minutes:.1f}min deducted "
-            f"(budget change {budget_delta/60.0:.1f}min), "
-            f"{state.remaining_budget_seconds:.0f}s remaining, "
-            f"debt {state.overtime_seconds:.0f}s"
+            "[COMMAND] extra: -%.1f min. Budget: %s, overtime: %s, extra today: %d/%d",
+            abs(pending_minutes),
+            remaining_str,
+            debt_str,
+            extra_today,
+            MAX_EXTRA_MINUTES_PER_DAY,
         )
-
-    # Record positive extra against the daily cap (so CLI can enforce limit).
-    if pending_minutes > 0:
-        add_extra_minutes_given_today(pending_minutes)
 
     # Clear the pending value so we don't apply it again on the next poll.
     save_extra_minutes_pending(0.0)
@@ -554,7 +552,8 @@ def apply_pending_set_time(state):
         state.overtime_escalation_level = 0
         state.overtime_next_popup_timestamp = 0.0
         log.info(
-            f"[SET] Budget set to {minutes:.1f}min remaining, overtime cleared."
+            "[COMMAND] set: budget to %.1f min, overtime cleared.",
+            minutes,
         )
     elif minutes < 0:
         debt_minutes = abs(minutes)
@@ -562,7 +561,8 @@ def apply_pending_set_time(state):
         state.overtime_seconds = float(debt_minutes * 60)
         # Level will be recomputed from overtime_seconds by popup logic.
         log.info(
-            f"[SET] Overtime set to {debt_minutes:.1f}min (budget 0)."
+            "[COMMAND] set: overtime to %.1f min (budget 0).",
+            debt_minutes,
         )
 
     # Clear the pending value so we don't apply it again on the next poll.
@@ -620,11 +620,9 @@ def update_budget(state):
     idle_check_end = time.time()
 
     if is_afk and not _was_afk:
-        log.info(
-            f"[IDLE] User AFK (>{AFK_IDLE_THRESHOLD}s)."
-        )
+        log_event("IDLE", event="afk", threshold_s=AFK_IDLE_THRESHOLD)
     elif not is_afk and _was_afk:
-        log.info("[IDLE] User activity resumed.")
+        log_event("IDLE", event="resumed")
     _was_afk = is_afk
 
     # Keep the known Steam game list fresh so we don't miss exes whose
@@ -647,7 +645,7 @@ def update_budget(state):
         is_steam_session = source_name.startswith("Steam:")
         # Start a new session if this is the first detection
         if not state.is_tracked_activity_running:
-            log.info(f"[SESSION] Started: {source_name}")
+            log_event("SESSION", event="started", activity=source_name)
             state.current_session_start_timestamp = now
             state.seconds_used_this_session = 0.0
 
@@ -660,7 +658,7 @@ def update_budget(state):
         # - For tracked sites (YouTube, etc.): always count, even if AFK from
         #   keyboard/mouse, since you're still watching.
         if is_afk and is_steam_session:
-            log.debug("[IDLE] AFK during Steam session; freezing budget this tick.")
+            log.debug("[IDLE] event=afk_steam_freezing_budget")
         else:
             state.seconds_used_this_session += elapsed_seconds
             consume_budget(state, elapsed_seconds)
@@ -668,9 +666,11 @@ def update_budget(state):
         # End the session if we were previously active; overtime cycle is now
         # only reset when budget has fully recovered back to the cap.
         if state.is_tracked_activity_running:
-            log.info(
-                f"[SESSION] Ended: {state.tracked_activity_name} "
-                f"(used {state.seconds_used_this_session:.0f}s)"
+            log_event(
+                "SESSION",
+                event="ended",
+                activity=state.tracked_activity_name,
+                used_s=int(state.seconds_used_this_session),
             )
         state.is_tracked_activity_running = False
         state.tracked_activity_name = ""
@@ -688,12 +688,12 @@ def update_budget(state):
 
     perf_total = (time.time() - perf_start) * 1000.0
     log.debug(
-        "[PERF] update_budget: "
-        f"hydrate={ (t_idle_end - t_idle_start) * 1000.0:.1f}ms, "
-        f"idle_check={ (idle_check_end - idle_check_start) * 1000.0:.1f}ms, "
-        f"refresh_steam={ (refresh_end - refresh_start) * 1000.0:.1f}ms, "
-        f"detect={ (detect_end - detect_start) * 1000.0:.1f}ms, "
-        f"total={ perf_total:.1f}ms"
+        "[PERF] hydrate_ms=%.1f idle_check_ms=%.1f refresh_steam_ms=%.1f detect_ms=%.1f total_ms=%.1f",
+        (t_idle_end - t_idle_start) * 1000.0,
+        (idle_check_end - idle_check_start) * 1000.0,
+        (refresh_end - refresh_start) * 1000.0,
+        (detect_end - detect_start) * 1000.0,
+        perf_total,
     )
 
     return mode != "idle", source_name

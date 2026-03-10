@@ -16,6 +16,7 @@ from hotturkey.state import (
     save_set_minutes,
     reset_state_to_default,
 )
+from . import runner
 
 
 def _format_time(seconds):
@@ -159,6 +160,11 @@ def handle_reset():
     print()
 
 
+def handle_run():
+    """Start the HotTurkey background process (same as `python run.py`)."""
+    runner.launch()
+
+
 def main():
     """Parse command-line arguments and route to the right handler."""
     parser = argparse.ArgumentParser(prog="hotturkey", description="HotTurkey screen time enforcer")
@@ -174,6 +180,8 @@ def main():
 
     subparsers.add_parser("reset", help="Reset all state to default (full budget, zero overtime, extra today cleared)")
 
+    subparsers.add_parser("run", help="Start HotTurkey (tray + monitor) in the background")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -184,6 +192,8 @@ def main():
         handle_set(args.minutes)
     elif args.command == "reset":
         handle_reset()
+    elif args.command == "run":
+        handle_run()
     else:
         parser.print_help()
 

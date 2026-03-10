@@ -28,7 +28,13 @@ A Windows screen-time enforcer: tracks Steam games and browser sites (e.g. YouTu
 
 ## Setup
 
-1. **Python 3.8+** and find its path
+1. **Python 3.8+** and find its path. In PowerShell you can run:
+
+   ```powershell
+   where python
+   ```
+
+   Then copy the full path you want to use (e.g. `C:\Users\you\AppData\Local\Programs\Python\Python313\python.exe`).
 2. **Clone** the repo and open a terminal in the project folder.
 3. **Install the package** (deps + `hotturkey` command) in the project folder:
    ```powershell
@@ -38,11 +44,19 @@ A Windows screen-time enforcer: tracks Steam games and browser sites (e.g. YouTu
 
 ## Running
 
+You can start HotTurkey either via Python or the installed CLI:
+
 ```text
 python run.py
 ```
 
-The app starts a **background process** and exits; you can close the terminal. HotTurkey keeps running.
+or, after the setup command above you can just run this in any terminal that is in that python env and your python scripts folder is in your path:
+
+```text
+hotturkey run
+```
+
+Both commands start a **background process** and exit; you can close the terminal. HotTurkey keeps running.
 
 - **Tray icon** (near the clock): green → yellow → orange → red as budget drops. Hover for remaining time and current activity.
 - **Logs** : `%USERPROFILE%\.hotturkey\hotturkey.log`. Right-click tray → **Show logs** to tail it.

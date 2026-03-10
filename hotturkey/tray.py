@@ -22,14 +22,15 @@ def _build_icon_image(budget_seconds):
     """Draw a 64x64 colored circle.
     Color depends on the *percentage* of budget left so it behaves consistently
     even when MAX_PLAY_BUDGET is changed for testing:
-      - green  : > 50% remaining
+      - white  : 100% (or more) remaining
+      - green  : 50–100% remaining
       - yellow : 25–50% remaining
       - orange : 0–25% remaining
       - red    : 0 or below"""
     if MAX_PLAY_BUDGET <= 0:
         ratio = 0.0
     else:
-        ratio = max(0.0, min(1.0, budget_seconds / float(MAX_PLAY_BUDGET)))
+        ratio = budget_seconds / float(MAX_PLAY_BUDGET)
 
     if ratio <= 0.0:
         color = "#DC2626"  # red
@@ -37,8 +38,10 @@ def _build_icon_image(budget_seconds):
         color = "#F97316"  # orange
     elif ratio < 0.5:
         color = "#EAB308"  # yellow
-    else:
+    elif ratio < 1.0:
         color = "#22C55E"  # green
+    else:
+        color = "#FFFFFF"  # white (full budget)
 
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -109,7 +112,7 @@ def create_tray_icon(quit_callback=None):
     _quit_callback = quit_callback
     image = _build_icon_image(MAX_PLAY_BUDGET)
     menu = pystray.Menu(
-        pystray.MenuItem("Status", _on_status),
+        pystray.MenuItem("Status", _on_status, default=True),
         pystray.MenuItem("Show logs", _on_show_logs),
         pystray.MenuItem("Quit", _on_quit),
     )
@@ -124,13 +127,24 @@ def update_tray_icon(state):
     if _icon is None:
         return
     _icon.icon = _build_icon_image(state.remaining_budget_seconds)
+
     remaining = _format_time(state.remaining_budget_seconds)
-    overtime = getattr(state, "overtime_seconds", 0.0)
-    debt_str = _format_time(overtime)
+    overtime_seconds = getattr(state, "overtime_seconds", 0.0)
+    overtime_str = _format_time(overtime_seconds)
     extra_today = int(load_extra_minutes_given_today())
-    extra_str = f"Extra: {extra_today}/{MAX_EXTRA_MINUTES_PER_DAY} today"
-    debt_part = f" | Debt: {debt_str}" if overtime > 0 else ""
+
+    budget_overtime_part = f"Budget/Overtime: {remaining} / {overtime_str}"
+    extra_part = f"Extra: {extra_today}/{MAX_EXTRA_MINUTES_PER_DAY}"
     if state.is_tracked_activity_running:
-        _icon.title = f"HotTurkey: {remaining} left ({state.tracked_activity_name}) | {extra_str}{debt_part}"
+        _icon.title = (
+            "HotTurkey\n"
+            f"{budget_overtime_part}\n"
+            f"{extra_part}\n"
+            f"Activity: {state.tracked_activity_name}"
+        )
     else:
-        _icon.title = f"HotTurkey: {remaining} remaining | {extra_str}{debt_part}"
+        _icon.title = (
+            "HotTurkey\n"
+            f"{budget_overtime_part}\n"
+            f"{extra_part}"
+        )

@@ -128,23 +128,28 @@ def update_tray_icon(state):
         return
     _icon.icon = _build_icon_image(state.remaining_budget_seconds)
 
-    remaining = _format_time(state.remaining_budget_seconds)
+    remaining_seconds = max(0.0, state.remaining_budget_seconds)
+    remaining = _format_time(remaining_seconds)
     overtime_seconds = getattr(state, "overtime_seconds", 0.0)
     overtime_str = _format_time(overtime_seconds)
     extra_today = int(load_extra_minutes_given_today())
 
-    budget_overtime_part = f"Budget/Overtime: {remaining} / {overtime_str}"
+    if overtime_seconds > 0:
+        main_line = f"Overtime: {overtime_str}"
+    else:
+        main_line = f"Budget: {remaining}"
+
     extra_part = f"Extra: {extra_today}/{MAX_EXTRA_MINUTES_PER_DAY}"
     if state.is_tracked_activity_running:
         _icon.title = (
             "HotTurkey\n"
-            f"{budget_overtime_part}\n"
+            f"{main_line}\n"
             f"{extra_part}\n"
             f"Activity: {state.tracked_activity_name}"
         )
     else:
         _icon.title = (
             "HotTurkey\n"
-            f"{budget_overtime_part}\n"
+            f"{main_line}\n"
             f"{extra_part}"
         )

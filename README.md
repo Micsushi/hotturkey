@@ -82,7 +82,7 @@ In a **separate** terminal (after `pip install -e .`):
 
 Changes are applied on the next poll when the app is running. 
 
-## Auto-start (optional)
+## Auto-start with Windows start
 
 1. `Win + R` → `shell:startup` → Enter.
 2. New shortcut → Target: `"C:\Path\To\Python\python.exe" "C:\Path\To\hotturkey\run.py"`.

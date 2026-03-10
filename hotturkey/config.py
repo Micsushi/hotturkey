@@ -29,6 +29,10 @@ LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
 # Single-line file overwritten each poll with current numbers (no repeated log lines)
 STATUS_FILE = os.path.join(STATE_DIR, "status.txt")
 
+# Small text file that controls the log level (INFO/DEBUG/etc) so the CLI
+# can toggle verbosity without editing code.
+LOG_LEVEL_FILE = os.path.join(STATE_DIR, "loglevel.txt")
+
 STEAM_PROCESS_NAME = "steam.exe"
 
 STEAM_HELPER_PROCESS_NAMES = {

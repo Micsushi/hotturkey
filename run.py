@@ -1,7 +1,4 @@
-# run.py -- The main entry point. Start the app with: python run.py
-# Launches the system tray icon on a background thread and the monitor loop on another.
-# Ctrl+C or right-click Quit on the tray icon to stop.
-# When run from a terminal, spawns a detached background process so it survives terminal close.
+# App starts by launching the system tray icon on a background thread and the monitor loop on another.
 
 import os
 import subprocess
@@ -23,89 +20,93 @@ from hotturkey.state import load_state, save_state, load_extra_minutes_given_tod
 from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
 from hotturkey.tray import create_tray_icon, update_tray_icon
-from hotturkey.logger import log, log_event
+from hotturkey.logger import log, log_event, refresh_log_level_from_disk
 
-
-# Flag to tell threads to stop
 _running = True
-# Set to "restart" when shutting down due to restart request (reduces log noise)
 _shutdown_reason = None
 
-# Handle to a system-wide mutex so only one instance of the background
-# HotTurkey process runs at a time.
+# Mutex to make sure only one instance of the HotTurkey process can run at a time.
 _single_instance_mutex = None
 _MUTEX_NAME = "HotTurkeySingleton"
 
-# Per-process shutdown event: each instance creates "HotTurkeyShutdown_<pid>"
-# and writes its pid to STATE_DIR/run.pid so a new run can signal the correct
-# process. This avoids the new instance inheriting a signaled event.
+# Per-instance shutdown event and PID file so new runs can signal the correct process to exit
 _shutdown_event = None
 _PID_FILE = os.path.join(STATE_DIR, "run.pid")
 
 
 def _format_mmss(seconds: float) -> str:
-    """Format a number of seconds as MM:SS (e.g. 2149 -> '35:49')."""
+    """Format seconds to MM:SS"""
     total = max(0, int(seconds))
     minutes = total // 60
     secs = total % 60
     return f"{minutes}:{secs:02d}"
 
 
-def monitor_loop():
-    """Background thread that runs every 5 seconds:
-    1. Detect if a game or tracked site is focused
-    2. Consume or recover budget
-    3. Show popups if needed
-    4. Update the tray icon color and tooltip
-    5. Save state to disk"""
-    state = load_state()
-
-    # Reset session flags from the previous run so we don't get ghost "Session Ended" logs.
-    # Also reset the poll timestamp to now so no time passes while the app wasn't running.
+def _reset_session_state(state) -> None:
+    """Clear per-session tracking fields and set last poll time to now"""
     state.is_tracked_activity_running = False
     state.tracked_activity_name = ""
     state.last_poll_timestamp = time.time()
 
-    remaining_str = _format_mmss(state.remaining_budget_seconds)
-    max_str = _format_mmss(MAX_PLAY_BUDGET)
-    overtime_seconds = getattr(state, "overtime_seconds", 0.0)
-    overtime_str = _format_mmss(overtime_seconds)
-    extra_today = load_extra_minutes_given_today()
+
+def _log_start_snapshot(state, *, event: str = "start") -> None:
+    """Log a START snapshot for the current state"""
+    remaining_time = _format_mmss(state.remaining_budget_seconds)
+    max_time = _format_mmss(MAX_PLAY_BUDGET)
+    overtime_used = _format_mmss(getattr(state, "overtime_seconds", 0.0))
+    extra_time_used = load_extra_minutes_given_today()
+
     log_event(
         "START",
-        budget=f"{remaining_str}/{max_str}",
-        overtime=overtime_str,
-        extra_today=f"{int(extra_today)}/{MAX_EXTRA_MINUTES_PER_DAY}",
+        event=event,
+        budget=f"{remaining_time}/{max_time}",
+        overtime=overtime_used,
+        extra_time_used=f"{int(extra_time_used)}/{MAX_EXTRA_MINUTES_PER_DAY}",
     )
+
+
+def monitor_loop():
+    """Background thread that runs every POLL_INTERVAL seconds"""
+    state = load_state()
+
+    _reset_session_state(state)
+    _log_start_snapshot(state)
     log.debug("[DEBUG] poll_interval_s=%s", POLL_INTERVAL)
 
     while _running:
         loop_start = time.time()
 
+        # check for log level change command
+        refresh_log_level_from_disk()
+
+        # check for reset command
         if check_and_clear_reload_flag():
             state = load_state()
-            state.is_tracked_activity_running = False
-            state.tracked_activity_name = ""
-            state.last_poll_timestamp = time.time()
+            _reset_session_state(state)
             log.info("[COMMAND] reset: state to default.")
-            log_event("START", event="reloaded", budget=f"{_format_mmss(state.remaining_budget_seconds)}/{_format_mmss(MAX_PLAY_BUDGET)}")
+            _log_start_snapshot(state, event="reloaded")
 
+        # detect current activity and update budget/overtime
         t0 = time.time()
         update_budget(state)
         t1 = time.time()
 
+        # fullscreen overtime popups if needed
         t2 = time.time()
         check_and_trigger_popups(state)
         t3 = time.time()
 
+        # refresh tray icon color and tooltip
         t4 = time.time()
         update_tray_icon(state)
         t5 = time.time()
 
+        # update state on disk
         t6 = time.time()
         save_state(state)
         t7 = time.time()
 
+        # log time taken per step (will need to run "hotturkey morelog" to see these)
         body_ms = (time.time() - loop_start) * 1000.0
         log.debug(
             "[PERF] update_budget_ms=%.1f popups_ms=%.1f tray_ms=%.1f save_state_ms=%.1f total_body_ms=%.1f",
@@ -116,8 +117,10 @@ def monitor_loop():
             body_ms,
         )
 
+        # Sleep until the next scheduled poll.
         time.sleep(POLL_INTERVAL)
 
+    # Final save and STOP event once the monitor loop exits.
     save_state(state)
     if _shutdown_reason != "restart":
         log_event("STOP", event="monitor_stopped", state="saved")
@@ -162,6 +165,7 @@ def main():
             log_event("START", event="existing_did_not_exit", action="exiting")
             return
 
+    # We are now the only running instance; continue normal startup.
     log.info("[COMMAND] start: app started.")
 
     # Record our PID and create our own shutdown event so a future restart
@@ -174,6 +178,7 @@ def main():
         None, False, False, f"HotTurkeyShutdown_{pid}"
     )
 
+    # Tray "Quit" handler flips the main loop flag.
     def on_quit():
         global _running
         _running = False
@@ -205,6 +210,7 @@ def main():
     except KeyboardInterrupt:
         log_event("STOP", event="ctrl_c")
 
+    # Begin shutdown: stop tray, join monitor thread, and log final STOP.
     _running = False
     icon.stop()
     monitor_thread.join(timeout=10)

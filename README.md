@@ -79,6 +79,8 @@ In a **separate** terminal (after `pip install -e .`):
 | `hotturkey set 30` | Set budget to 30 minutes remaining and clear overtime. |
 | `hotturkey set -15` | Set budget to 0 and overtime debt to 15 minutes. |
 | `hotturkey set 0` | Set both budget and overtime to 0. |
+| `hotturkey morelog` | Switch log level to DEBUG (verbose, includes `[PERF]` timing) for the running app and future runs. |
+| `hotturkey lesslog` | Switch log level back to INFO (normal, concise logs) for the running app and future runs. |
 
 Changes are applied on the next poll when the app is running. 
 

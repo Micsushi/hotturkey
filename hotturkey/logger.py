@@ -11,7 +11,7 @@
 import logging
 import os
 
-from hotturkey.config import STATE_DIR, LOG_FILE
+from hotturkey.config import STATE_DIR, LOG_FILE, LOG_LEVEL_FILE
 
 # Simplified ANSI colors:
 # - Green for budget recovery
@@ -71,17 +71,48 @@ class FlushingFileHandler(logging.FileHandler):
         self.flush()
 
 
+_current_level_name = "INFO"
+
+
+def _load_log_level_name() -> str:
+    """Return the logging level *name* to use, based on LOG_LEVEL_FILE if present.
+
+    Defaults to 'INFO' for normal, concise logs. Accepts standard level names
+    like DEBUG, INFO, WARNING, ERROR (case-insensitive).
+    """
+    level_name = "INFO"
+    try:
+        if os.path.exists(LOG_LEVEL_FILE):
+            with open(LOG_LEVEL_FILE, "r") as f:
+                raw = f.read().strip()
+            if raw:
+                level_name = raw.upper()
+    except OSError:
+        # Fall back to default on any read error.
+        pass
+
+    return level_name
+
+
+def _load_log_level() -> int:
+    """Return the numeric logging level to use based on LOG_LEVEL_FILE."""
+    level_name = _load_log_level_name()
+    return getattr(logging, level_name, logging.INFO)
+
+
 def setup_logger():
     """Create a logger with two outputs:
     1. Console with colors (when run from terminal)
     2. Plain text file at ~/.hotturkey/hotturkey.log (always, flushed so tail works)"""
     os.makedirs(STATE_DIR, exist_ok=True)
 
+    global _current_level_name
+
     logger = logging.getLogger("hotturkey")
-    # Default to INFO for normal, concise logs. Debug-level lines (including
-    # PERF diagnostics) stay in the code but are hidden unless you manually
-    # raise the level to DEBUG when troubleshooting.
-    logger.setLevel(logging.INFO)
+    # Log level is user-tunable via LOG_LEVEL_FILE so the CLI can flip between
+    # INFO (normal) and DEBUG (perf troubleshooting) without code changes.
+    _current_level_name = _load_log_level_name()
+    logger.setLevel(getattr(logging, _current_level_name, logging.INFO))
 
     base_format = "%(asctime)s  %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
@@ -102,6 +133,25 @@ def setup_logger():
 
 # This runs once when the module is first imported, creating a shared logger
 log = setup_logger()
+
+
+def refresh_log_level_from_disk():
+    """Reload log level from LOG_LEVEL_FILE if it changed.
+
+    Called periodically by the running app so commands like `hotturkey morelog`
+    take effect without restarting the background process.
+    """
+    global _current_level_name
+
+    new_name = _load_log_level_name()
+    if new_name == _current_level_name:
+        return
+
+    new_level = getattr(logging, new_name, logging.INFO)
+    log.setLevel(new_level)
+    old = _current_level_name
+    _current_level_name = new_name
+    log.info(f"[COMMAND] loglevel: old={old} new={new_name}")
 
 
 def log_event(tag, message=None, **kwargs):

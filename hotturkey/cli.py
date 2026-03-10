@@ -5,9 +5,10 @@
 #   python -m hotturkey.cli extra -10      (remove 10 min, won't go below 0)
 
 import argparse
+import os
 import sys
 
-from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY
+from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY, STATE_DIR, LOG_LEVEL_FILE
 from hotturkey.state import (
     load_state,
     load_extra_minutes_pending,
@@ -165,6 +166,31 @@ def handle_run():
     runner.launch()
 
 
+def _set_log_level(level_name: str):
+    """Write the requested log level to LOG_LEVEL_FILE (e.g. DEBUG or INFO)."""
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(LOG_LEVEL_FILE, "w") as f:
+        f.write(level_name.upper())
+
+
+def handle_morelog():
+    """Increase logging verbosity to DEBUG for the running app and future runs."""
+    _set_log_level("DEBUG")
+    print()
+    print("  Log level set to DEBUG (verbose, includes [PERF] timing).")
+    print("  If HotTurkey is running, it will pick this up within one poll.")
+    print()
+
+
+def handle_lesslog():
+    """Reduce logging verbosity to INFO for the running app and future runs."""
+    _set_log_level("INFO")
+    print()
+    print("  Log level set to INFO (normal, concise logs).")
+    print("  If HotTurkey is running, it will pick this up within one poll.")
+    print()
+
+
 def main():
     """Parse command-line arguments and route to the right handler."""
     parser = argparse.ArgumentParser(prog="hotturkey", description="HotTurkey screen time enforcer")
@@ -182,6 +208,9 @@ def main():
 
     subparsers.add_parser("run", help="Start HotTurkey (tray + monitor) in the background")
 
+    subparsers.add_parser("morelog", help="Set log level to DEBUG and restart HotTurkey")
+    subparsers.add_parser("lesslog", help="Set log level to INFO and restart HotTurkey")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -194,6 +223,10 @@ def main():
         handle_reset()
     elif args.command == "run":
         handle_run()
+    elif args.command == "morelog":
+        handle_morelog()
+    elif args.command == "lesslog":
+        handle_lesslog()
     else:
         parser.print_help()
 

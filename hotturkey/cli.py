@@ -8,6 +8,8 @@ import argparse
 import os
 import sys
 
+import win32event
+
 from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY, STATE_DIR, LOG_LEVEL_FILE
 from hotturkey.state import (
     load_state,
@@ -166,6 +168,38 @@ def handle_run():
     runner.launch()
 
 
+def handle_stop():
+    """Ask the running HotTurkey background process to exit."""
+    pid_file = os.path.join(STATE_DIR, "run.pid")
+
+    try:
+        with open(pid_file, "r") as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        print()
+        print("  No running HotTurkey instance found (PID file missing or invalid).")
+        print()
+        sys.exit(1)
+
+    try:
+        shutdown_event = win32event.OpenEvent(
+            win32event.EVENT_MODIFY_STATE,
+            False,
+            f"HotTurkeyShutdown_{pid}",
+        )
+        win32event.SetEvent(shutdown_event)
+    except Exception:
+        print()
+        print("  Could not signal the running HotTurkey process to stop.")
+        print("  It may not be running, or the shutdown event could not be opened.")
+        print()
+        sys.exit(1)
+
+    print()
+    print("  Shutdown signal sent to HotTurkey.")
+    print()
+
+
 def _set_log_level(level_name: str):
     """Write the requested log level to LOG_LEVEL_FILE (e.g. DEBUG or INFO)."""
     os.makedirs(STATE_DIR, exist_ok=True)
@@ -207,6 +241,7 @@ def main():
     subparsers.add_parser("reset", help="Reset all state to default (full budget, zero overtime, extra today cleared)")
 
     subparsers.add_parser("run", help="Start HotTurkey (tray + monitor) in the background")
+    subparsers.add_parser("stop", help="Ask the running HotTurkey process to exit")
 
     subparsers.add_parser("morelog", help="Set log level to DEBUG and restart HotTurkey")
     subparsers.add_parser("lesslog", help="Set log level to INFO and restart HotTurkey")
@@ -223,6 +258,8 @@ def main():
         handle_reset()
     elif args.command == "run":
         handle_run()
+    elif args.command == "stop":
+        handle_stop()
     elif args.command == "morelog":
         handle_morelog()
     elif args.command == "lesslog":

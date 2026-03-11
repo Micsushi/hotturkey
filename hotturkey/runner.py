@@ -24,6 +24,7 @@ from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
 from hotturkey.tray import create_tray_icon, update_tray_icon
 from hotturkey.logger import log, log_event
+from hotturkey.utils import format_mmss
 
 
 _running = True
@@ -36,13 +37,6 @@ _shutdown_event = None
 _PID_FILE = os.path.join(STATE_DIR, "run.pid")
 
 
-def _format_mmss(seconds: float) -> str:
-    total = max(0, int(seconds))
-    minutes = total // 60
-    secs = total % 60
-    return f"{minutes}:{secs:02d}"
-
-
 def monitor_loop():
     global _running, _shutdown_reason
 
@@ -52,10 +46,10 @@ def monitor_loop():
     state.tracked_activity_name = ""
     state.last_poll_timestamp = time.time()
 
-    remaining_str = _format_mmss(state.remaining_budget_seconds)
-    max_str = _format_mmss(MAX_PLAY_BUDGET)
+    remaining_str = format_mmss(state.remaining_budget_seconds)
+    max_str = format_mmss(MAX_PLAY_BUDGET)
     overtime_seconds = getattr(state, "overtime_seconds", 0.0)
-    overtime_str = _format_mmss(overtime_seconds)
+    overtime_str = format_mmss(overtime_seconds)
     extra_today = load_extra_minutes_given_today()
     log_event(
         "START",
@@ -77,7 +71,7 @@ def monitor_loop():
             log_event(
                 "START",
                 event="reloaded",
-                budget=f"{_format_mmss(state.remaining_budget_seconds)}/{_format_mmss(MAX_PLAY_BUDGET)}",
+                budget=f"{format_mmss(state.remaining_budget_seconds)}/{format_mmss(MAX_PLAY_BUDGET)}",
             )
 
         t0 = time.time()

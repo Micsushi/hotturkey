@@ -9,6 +9,7 @@ from hotturkey.config import (
     OVERTIME_MIN_INTERVAL_SECONDS,
 )
 from hotturkey.logger import log
+from hotturkey.utils import format_mmss
 
 
 def show_fullscreen_popup(message):
@@ -26,13 +27,6 @@ def show_fullscreen_popup(message):
         ["cmd", "/c", "start", "", "/max", "cmd", "/c", cmd],
     )
     log.info("[POPUP] event=fullscreen message=%s", message)
-
-
-def format_time(seconds):
-    """Turn a number of seconds into a mm:ss string (e.g. 1800 -> '30:00')."""
-    minutes = int(seconds) // 60
-    secs = int(seconds) % 60
-    return f"{minutes}:{secs:02d}"
 
 
 def check_and_trigger_popups(state):
@@ -96,7 +90,7 @@ def check_and_trigger_popups(state):
 
     # When we cross into a *new* level during an active session, fire a popup.
     if level > prev_level:
-        used = format_time(state.seconds_used_this_session)
+        used = format_mmss(state.seconds_used_this_session)
 
         if level == 1:
             show_fullscreen_popup(

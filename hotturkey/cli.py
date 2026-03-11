@@ -1,8 +1,4 @@
-# cli.py -- Command-line interface for checking status and adding/removing time.
-# Run from a separate terminal while run.py is running:
-#   python -m hotturkey.cli status
-#   python -m hotturkey.cli extra 30       (add 30 min)
-#   python -m hotturkey.cli extra -10      (remove 10 min, won't go below 0)
+# cli commands for the user to use
 
 import argparse
 import os
@@ -19,14 +15,8 @@ from hotturkey.state import (
     save_set_minutes,
     reset_state_to_default,
 )
+from hotturkey.utils import format_mmss
 from . import runner
-
-
-def _format_time(seconds):
-    """Turn seconds into mm:ss string."""
-    minutes = int(seconds) // 60
-    secs = int(seconds) % 60
-    return f"{minutes}:{secs:02d}"
 
 
 def handle_status():
@@ -35,9 +25,9 @@ def handle_status():
     # Effective budget includes any pending extra minutes that haven't been picked up yet
     pending_minutes = load_extra_minutes_pending()
     effective_seconds = max(0.0, state.remaining_budget_seconds + (pending_minutes * 60))
-    remaining = _format_time(effective_seconds)
-    overtime = _format_time(getattr(state, "overtime_seconds", 0.0))
-    total = _format_time(MAX_PLAY_BUDGET)
+    remaining = format_mmss(effective_seconds)
+    overtime = format_mmss(getattr(state, "overtime_seconds", 0.0))
+    total = format_mmss(MAX_PLAY_BUDGET)
     activity = state.tracked_activity_name if state.is_tracked_activity_running else "None"
     session = _format_time(state.seconds_used_this_session) if state.is_tracked_activity_running else "N/A"
 
@@ -111,9 +101,9 @@ def handle_extra(minutes):
         print(f"  Added {minutes} minutes.")
     else:
         print(f"  Deducted {abs(minutes)} minutes.")
-    print(f"  Budget will be ~{_format_time(effective_seconds)} (next poll if app is running).")
+    print(f"  Budget will be ~{format_mmss(effective_seconds)} (next poll if app is running).")
     if future_overtime > 0:
-        print(f"  Overtime debt will be ~{_format_time(future_overtime)}.")
+        print(f"  Overtime debt will be ~{format_mmss(future_overtime)}.")
     print()
 
 
@@ -130,8 +120,6 @@ def handle_set(minutes):
     Implemented via a small sidecar file so it works whether the app is running
     or not; the monitor picks it up on the next poll.
     """
-    state = load_state()
-
     # Clear any pending extra-time deltas so 'set' is an absolute override.
     save_extra_minutes_pending(0.0)
 
@@ -139,12 +127,12 @@ def handle_set(minutes):
 
     print()
     if minutes > 0:
-        print(f"  Budget will be set to: {_format_time(minutes * 60)} remaining.")
+        print(f"  Budget will be set to: {format_mmss(minutes * 60)} remaining.")
         print("  Overtime will be cleared to 0.")
     elif minutes < 0:
         debt_minutes = abs(minutes)
         print("  Budget will be set to: 0:00.")
-        print(f"  Overtime debt will be set to: {_format_time(debt_minutes * 60)}.")
+        print(f"  Overtime debt will be set to: {format_mmss(debt_minutes * 60)}.")
     else:
         print("  Budget and overtime will be reset to 0:00.")
     print("  (Takes effect on next poll if app is running.)")
@@ -154,7 +142,7 @@ def handle_set(minutes):
 def handle_reset():
     """Reset all state to default: full budget, zero overtime, extra today cleared."""
     reset_state_to_default()
-    total = _format_time(MAX_PLAY_BUDGET)
+    total = format_mmss(MAX_PLAY_BUDGET)
     print()
     print("  State reset to default.")
     print(f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{MAX_EXTRA_MINUTES_PER_DAY}.")

@@ -21,6 +21,7 @@ from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
 from hotturkey.tray import create_tray_icon, update_tray_icon
 from hotturkey.logger import log, log_event, refresh_log_level_from_disk
+from hotturkey.utils import format_mmss
 
 _running = True
 _shutdown_reason = None
@@ -34,14 +35,6 @@ _shutdown_event = None
 _PID_FILE = os.path.join(STATE_DIR, "run.pid")
 
 
-def _format_mmss(seconds: float) -> str:
-    """Format seconds to MM:SS"""
-    total = max(0, int(seconds))
-    minutes = total // 60
-    secs = total % 60
-    return f"{minutes}:{secs:02d}"
-
-
 def _reset_session_state(state) -> None:
     """Clear per-session tracking fields and set last poll time to now"""
     state.is_tracked_activity_running = False
@@ -51,9 +44,9 @@ def _reset_session_state(state) -> None:
 
 def _log_start_snapshot(state, *, event: str = "start") -> None:
     """Log a START snapshot for the current state"""
-    remaining_time = _format_mmss(state.remaining_budget_seconds)
-    max_time = _format_mmss(MAX_PLAY_BUDGET)
-    overtime_used = _format_mmss(getattr(state, "overtime_seconds", 0.0))
+    remaining_time = format_mmss(state.remaining_budget_seconds)
+    max_time = format_mmss(MAX_PLAY_BUDGET)
+    overtime_used = format_mmss(getattr(state, "overtime_seconds", 0.0))
     extra_time_used = load_extra_minutes_given_today()
 
     log_event(

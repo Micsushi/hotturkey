@@ -249,14 +249,6 @@ def detect_tracked_activity():
 
 # --- Budget logic ---
 
-def _format_mmss(seconds: float) -> str:
-    """Format a number of seconds as MM:SS (e.g. 924 -> '15:24')."""
-    total = max(0, int(seconds))
-    minutes = total // 60
-    secs = total % 60
-    return f"{minutes}:{secs:02d}"
-
-
 def _overtime_level_from_debt(overtime_seconds: float) -> int:
     """Compute overtime level (1, 2, 3, ...) from current debt. Matches popup.py logic."""
     if overtime_seconds <= 0:

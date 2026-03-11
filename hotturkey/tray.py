@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY, LOG_FILE
 from hotturkey.logger import log
 from hotturkey.state import load_extra_minutes_given_today
+from hotturkey.utils import format_mmss
 
 
 # Module-level references so update_tray_icon can reach the icon and state
@@ -49,24 +50,21 @@ def _build_icon_image(budget_seconds):
     return img
 
 
-def _format_time(seconds):
-    """Turn seconds into mm:ss string."""
-    minutes = int(seconds) // 60
-    secs = int(seconds) % 60
-    return f"{minutes}:{secs:02d}"
-
-
 def _on_status(icon, item):
     """Right-click menu handler: opens a small terminal showing current budget info."""
     if _state_ref is None:
         return
     s = _state_ref
-    remaining = _format_time(s.remaining_budget_seconds)
-    overtime = _format_time(getattr(s, "overtime_seconds", 0.0))
-    total = _format_time(MAX_PLAY_BUDGET)
+    remaining = format_mmss(s.remaining_budget_seconds)
+    overtime = format_mmss(getattr(s, "overtime_seconds", 0.0))
+    total = format_mmss(MAX_PLAY_BUDGET)
     extra_today = int(load_extra_minutes_given_today())
     activity = s.tracked_activity_name if s.is_tracked_activity_running else "None"
-    session = _format_time(s.seconds_used_this_session) if s.is_tracked_activity_running else "N/A"
+    session = (
+        format_mmss(s.seconds_used_this_session)
+        if s.is_tracked_activity_running
+        else "N/A"
+    )
     msg = (
         f"HotTurkey Status"
         f" & echo."
@@ -129,9 +127,9 @@ def update_tray_icon(state):
     _icon.icon = _build_icon_image(state.remaining_budget_seconds)
 
     remaining_seconds = max(0.0, state.remaining_budget_seconds)
-    remaining = _format_time(remaining_seconds)
+    remaining = format_mmss(remaining_seconds)
     overtime_seconds = getattr(state, "overtime_seconds", 0.0)
-    overtime_str = _format_time(overtime_seconds)
+    overtime_str = format_mmss(overtime_seconds)
     extra_today = int(load_extra_minutes_given_today())
 
     if overtime_seconds > 0:

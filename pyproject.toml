@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hotturkey"
 version = "0.1.0"
-description = "Windows screen-time enforcer for Steam games and browser sites"
+description = "Windows screen-time enforcer for Steam games and browser entertainment sites"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [

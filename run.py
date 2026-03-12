@@ -16,7 +16,12 @@ from hotturkey.config import (
     MAX_EXTRA_MINUTES_PER_DAY,
     STATE_DIR,
 )
-from hotturkey.state import load_state, save_state, load_extra_minutes_given_today, check_and_clear_reload_flag
+from hotturkey.state import (
+    load_state,
+    save_state,
+    load_extra_minutes_given_today,
+    check_and_clear_reload_flag,
+)
 from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
 from hotturkey.tray import create_tray_icon, update_tray_icon
@@ -60,6 +65,14 @@ def _log_start_snapshot(state, *, event: str = "start") -> None:
 
 def monitor_loop():
     """Background thread that runs every POLL_INTERVAL seconds"""
+    try:
+        _monitor_loop_inner()
+    except Exception:
+        log.critical("[CRASH] monitor thread died with exception:", exc_info=True)
+        raise
+
+
+def _monitor_loop_inner():
     state = load_state()
 
     _reset_session_state(state)
@@ -130,7 +143,7 @@ def main():
     last_error = win32api.GetLastError()
 
     if last_error == winerror.ERROR_ALREADY_EXISTS:
-        # another instance is running. 
+        # another instance is running
         # wait until it has released the mutex so we don't start a second tray/monitor.
         log.info("[COMMAND] start: app already running, requesting restart.")
         try:
@@ -202,7 +215,7 @@ def main():
     except KeyboardInterrupt:
         log_event("STOP", event="ctrl_c")
 
-    # shutting down 
+    # shutting down
     _running = False
     icon.stop()
     monitor_thread.join(timeout=10)
@@ -222,12 +235,15 @@ def launch():
             [sys.executable, os.path.abspath(__file__)],
             cwd=script_dir,
             env=env,
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            creationflags=subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        print("HotTurkey started (or is already running) in background. You can close this terminal.")
+        print(
+            "HotTurkey started (or is already running) in background. You can close this terminal."
+        )
         print("Right-click the tray icon for Status, Show logs, or Quit.")
         sys.exit(0)
 
@@ -236,4 +252,3 @@ def launch():
 
 if __name__ == "__main__":
     launch()
- 

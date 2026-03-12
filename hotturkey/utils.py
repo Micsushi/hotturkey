@@ -4,4 +4,3 @@ def format_mmss(seconds: float) -> str:
     minutes = total // 60
     secs = total % 60
     return f"{minutes}:{secs:02d}"
-

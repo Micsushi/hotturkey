@@ -6,7 +6,7 @@ import os
 import time
 from datetime import date
 
-from hotturkey.config import STATE_DIR, STATE_FILE, MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY
+from hotturkey.config import STATE_DIR, STATE_FILE, MAX_PLAY_BUDGET
 
 
 class AppState:
@@ -69,16 +69,26 @@ class AppState:
     def from_dict(self, data):
         """Restore this object's fields from a dictionary (loaded from JSON).
         Uses defaults if any key is missing, so old state files still work."""
-        self.remaining_budget_seconds = data.get("remaining_budget_seconds", float(MAX_PLAY_BUDGET))
+        self.remaining_budget_seconds = data.get(
+            "remaining_budget_seconds", float(MAX_PLAY_BUDGET)
+        )
         self.overtime_seconds = data.get("overtime_seconds", 0.0)
         self.last_poll_timestamp = data.get("last_poll_timestamp", time.time())
-        self.is_tracked_activity_running = data.get("is_tracked_activity_running", False)
+        self.is_tracked_activity_running = data.get(
+            "is_tracked_activity_running", False
+        )
         self.tracked_activity_name = data.get("tracked_activity_name", "")
-        self.current_session_start_timestamp = data.get("current_session_start_timestamp", 0.0)
+        self.current_session_start_timestamp = data.get(
+            "current_session_start_timestamp", 0.0
+        )
         self.seconds_used_this_session = data.get("seconds_used_this_session", 0.0)
         self.overtime_escalation_level = data.get("overtime_escalation_level", 0)
-        self.overtime_next_popup_timestamp = data.get("overtime_next_popup_timestamp", 0.0)
-        self.extra_minutes_pending_from_cli = data.get("extra_minutes_pending_from_cli", 0.0)
+        self.overtime_next_popup_timestamp = data.get(
+            "overtime_next_popup_timestamp", 0.0
+        )
+        self.extra_minutes_pending_from_cli = data.get(
+            "extra_minutes_pending_from_cli", 0.0
+        )
         self.known_steam_game_exes = data.get("known_steam_game_exes", [])
 
 
@@ -112,11 +122,13 @@ def reset_state_to_default():
     state = AppState()
     state.last_poll_timestamp = time.time()
     save_state(state)
-    _save_extra_data({
-        "extra_minutes_pending_from_cli": 0.0,
-        "extra_minutes_given_today": 0.0,
-        "extra_minutes_date": "",
-    })
+    _save_extra_data(
+        {
+            "extra_minutes_pending_from_cli": 0.0,
+            "extra_minutes_given_today": 0.0,
+            "extra_minutes_date": "",
+        }
+    )
     save_set_minutes(0.0)
     # Signal running monitor to reload state from disk on next poll
     with open(RELOAD_STATE_FLAG, "w"):
@@ -142,7 +154,11 @@ EXTRA_FILE = os.path.join(STATE_DIR, "extra.json")
 def _load_extra_data():
     """Load full extra.json; return dict with defaults for missing keys."""
     if not os.path.exists(EXTRA_FILE):
-        return {"extra_minutes_pending_from_cli": 0.0, "extra_minutes_given_today": 0.0, "extra_minutes_date": ""}
+        return {
+            "extra_minutes_pending_from_cli": 0.0,
+            "extra_minutes_given_today": 0.0,
+            "extra_minutes_date": "",
+        }
     try:
         with open(EXTRA_FILE, "r") as f:
             data = json.load(f)
@@ -151,7 +167,11 @@ def _load_extra_data():
         data.setdefault("extra_minutes_date", "")
         return data
     except (json.JSONDecodeError, IOError, ValueError):
-        return {"extra_minutes_pending_from_cli": 0.0, "extra_minutes_given_today": 0.0, "extra_minutes_date": ""}
+        return {
+            "extra_minutes_pending_from_cli": 0.0,
+            "extra_minutes_given_today": 0.0,
+            "extra_minutes_date": "",
+        }
 
 
 def _save_extra_data(data):
@@ -163,7 +183,8 @@ def _save_extra_data(data):
 
 def load_extra_minutes_pending():
     """Return minutes of extra time requested via the CLI but not yet applied.
-    Stored separately from state.json so CLI can work whether the app is running or not."""
+    Stored separately from state.json so CLI can work whether the app is running or not.
+    """
     return float(_load_extra_data().get("extra_minutes_pending_from_cli", 0.0))
 
 
@@ -191,7 +212,9 @@ def add_extra_minutes_given_today(minutes):
     if data.get("extra_minutes_date") != today_str:
         data["extra_minutes_given_today"] = 0.0
         data["extra_minutes_date"] = today_str
-    data["extra_minutes_given_today"] = float(data.get("extra_minutes_given_today", 0.0)) + float(minutes)
+    data["extra_minutes_given_today"] = float(
+        data.get("extra_minutes_given_today", 0.0)
+    ) + float(minutes)
     _save_extra_data(data)
 
 

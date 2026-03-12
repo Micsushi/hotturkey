@@ -1,0 +1,15 @@
+{
+  "python.linting.enabled": true,
+  "pylint.args": [
+    "--rcfile=${workspaceFolder}/pyproject.toml"
+  ],
+  "python.analysis.typeCheckingMode": "off",
+  "files.trimTrailingWhitespace": true,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit"
+    }
+  }
+}

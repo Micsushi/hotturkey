@@ -26,6 +26,7 @@ from hotturkey.config import (
     OVERTIME_MIN_INTERVAL_SECONDS,
 )
 from hotturkey.logger import log, log_event
+from hotturkey.utils import format_mmss
 from hotturkey.state import (
     load_extra_minutes_pending,
     save_extra_minutes_pending,
@@ -34,7 +35,6 @@ from hotturkey.state import (
     load_set_minutes,
     save_set_minutes,
 )
-
 
 # --- Detection helpers ---
 
@@ -85,6 +85,7 @@ def get_idle_seconds() -> float:
         return 0.0
     millis_since_input = _kernel32.GetTickCount() - info.dwTime
     return max(0.0, millis_since_input / 1000.0)
+
 
 def get_foreground_window_info():
     """Get the process ID and title of the window the user is currently looking at."""
@@ -153,7 +154,10 @@ def refresh_known_steam_games(state):
 
                 lname = name.lower()
                 # Skip helpers and ones we already know about.
-                if lname in STEAM_HELPER_PROCESS_NAMES or lname in _KNOWN_STEAM_GAME_NAMES:
+                if (
+                    lname in STEAM_HELPER_PROCESS_NAMES
+                    or lname in _KNOWN_STEAM_GAME_NAMES
+                ):
                     continue
 
                 _KNOWN_STEAM_GAME_NAMES.add(lname)
@@ -249,6 +253,7 @@ def detect_tracked_activity():
 
 # --- Budget logic ---
 
+
 def _overtime_level_from_debt(overtime_seconds: float) -> int:
     """Compute overtime level (1, 2, 3, ...) from current debt. Matches popup.py logic."""
     if overtime_seconds <= 0:
@@ -262,7 +267,7 @@ def _overtime_level_from_debt(overtime_seconds: float) -> int:
     if remaining_for_higher > 0:
         level = 2
         interval = base_interval * OVERTIME_INTERVAL_DECAY_FACTOR
-        while remaining_for_higher >= interval and interval >= 1.0:
+        while remaining_for_higher >= 1.0 and remaining_for_higher >= interval:
             remaining_for_higher -= interval
             level += 1
             interval *= OVERTIME_INTERVAL_DECAY_FACTOR
@@ -300,7 +305,7 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
         overtime = getattr(state, "overtime_seconds", 0.0)
         if overtime > 0:
             level = _overtime_level_from_debt(overtime)
-            suffix_parts.append(f"overtime L{level} {_format_mmss(overtime)}")
+            suffix_parts.append(f"overtime L{level} {format_mmss(overtime)}")
     elif is_recovering:
         if percent == 0:
             suffix_parts.append("full")
@@ -315,6 +320,7 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
         suffix = " | " + " | ".join(suffix_parts)
 
     return f"[{bar}] {percent:3d}% used{suffix}"
+
 
 def consume_budget(state, elapsed_seconds):
     """Subtract play time from budget.
@@ -349,7 +355,7 @@ def consume_budget(state, elapsed_seconds):
 
     spent = max(0.0, before_budget - state.remaining_budget_seconds)
     bar = _format_budget_bar(state, is_recovering=False)
-    remaining_str = _format_mmss(state.remaining_budget_seconds)
+    remaining_str = format_mmss(state.remaining_budget_seconds)
     budget_delta = -spent
     overtime_delta = overtime_added
     log.info(
@@ -373,7 +379,10 @@ def recover_budget(state, elapsed_seconds):
 
     # If budget is already above the normal cap (because of extra time),
     # don't change it during idle periods.
-    if state.remaining_budget_seconds >= MAX_PLAY_BUDGET and state.overtime_seconds <= 0:
+    if (
+        state.remaining_budget_seconds >= MAX_PLAY_BUDGET
+        and state.overtime_seconds <= 0
+    ):
         return
 
     cap = MAX_PLAY_BUDGET
@@ -392,22 +401,24 @@ def recover_budget(state, elapsed_seconds):
     # Step 2: any leftover recovery goes into normal budget (up to the cap).
     gained = 0.0
     if recovered > 0 and state.remaining_budget_seconds < cap:
-        state.remaining_budget_seconds = min(cap, state.remaining_budget_seconds + recovered)
+        state.remaining_budget_seconds = min(
+            cap, state.remaining_budget_seconds + recovered
+        )
         gained = state.remaining_budget_seconds - before_budget
 
     # If we've fully recovered back to the normal cap and cleared overtime,
     # reset the escalation cycle so future over-budget sessions start fresh.
     just_filled = (
-        before_budget < cap
-        and state.remaining_budget_seconds >= cap
-        and state.overtime_seconds <= 0.0
+        bool(before_budget < cap)
+        and bool(state.remaining_budget_seconds >= cap)
+        and bool(state.overtime_seconds <= 0.0)
     )
     if just_filled:
         state.overtime_escalation_level = 0
         state.overtime_next_popup_timestamp = 0.0
 
     bar = _format_budget_bar(state, is_recovering=True)
-    remaining_str = _format_mmss(state.remaining_budget_seconds)
+    remaining_str = format_mmss(state.remaining_budget_seconds)
     budget_delta = gained
     overtime_delta = -debt_paid
     if budget_delta != 0 or overtime_delta != 0:
@@ -454,8 +465,8 @@ def apply_pending_extra_time(state):
         if pending_minutes > 0:
             add_extra_minutes_given_today(pending_minutes)
 
-        remaining_str = _format_mmss(state.remaining_budget_seconds)
-        debt_str = _format_mmss(state.overtime_seconds)
+        remaining_str = format_mmss(state.remaining_budget_seconds)
+        debt_str = format_mmss(state.overtime_seconds)
         extra_today = int(load_extra_minutes_given_today())
         if debt_cleared > 0 and budget_delta > 0:
             log.info(
@@ -500,8 +511,8 @@ def apply_pending_extra_time(state):
             state.overtime_seconds = before_overtime + overdraw
             budget_delta = -before_budget
 
-        remaining_str = _format_mmss(state.remaining_budget_seconds)
-        debt_str = _format_mmss(state.overtime_seconds)
+        remaining_str = format_mmss(state.remaining_budget_seconds)
+        debt_str = format_mmss(state.overtime_seconds)
         extra_today = int(load_extra_minutes_given_today())
         log.info(
             "[COMMAND] extra: -%.1f min. Budget: %s, overtime: %s, extra today: %d/%d",
@@ -563,6 +574,7 @@ def apply_pending_set_time(state):
 
 # --- Main update function ---
 
+
 def update_budget(state):
     """Called every poll cycle by run.py. This is where everything comes together:
     1. Calculate how much time passed since last check
@@ -578,9 +590,7 @@ def update_budget(state):
     # Snap elapsed time to neat multiples of the poll interval so logs show
     # clean 5.0s consumed / 2.5s recovered instead of 5.1 / 1.9 due to jitter.
     if elapsed_seconds > 0 and POLL_INTERVAL > 0:
-        elapsed_seconds = round(
-            elapsed_seconds / POLL_INTERVAL
-        ) * POLL_INTERVAL
+        elapsed_seconds = round(elapsed_seconds / POLL_INTERVAL) * POLL_INTERVAL
         if elapsed_seconds < 0:
             elapsed_seconds = 0.0
 
@@ -645,16 +655,24 @@ def update_budget(state):
             log_event("BONUS", message=f"{source_name} focused")
         elif mode == "consume":
             if source_name.startswith("Steam:"):
-                log_event("GAMING", message=f"{source_name.replace('Steam: ', '')} focused")
+                log_event(
+                    "GAMING", message=f"{source_name.replace('Steam: ', '')} focused"
+                )
             else:
                 log_event("WATCHING", message=f"{source_name} focused")
 
     if mode == "consume":
         is_steam_session = source_name.startswith("Steam:")
         # End previous session if switching to a different activity
-        if state.is_tracked_activity_running and state.tracked_activity_name != source_name:
+        if (
+            state.is_tracked_activity_running
+            and state.tracked_activity_name != source_name
+        ):
             used_s = int(state.seconds_used_this_session)
-            log_event("SESSION", message=f"session ended: {state.tracked_activity_name}, {used_s}s used")
+            log_event(
+                "SESSION",
+                message=f"session ended: {state.tracked_activity_name}, {used_s}s used",
+            )
             state.is_tracked_activity_running = False
             state.tracked_activity_name = ""
         # Start a new session if this is the first detection
@@ -678,9 +696,15 @@ def update_budget(state):
             consume_budget(state, elapsed_seconds)
     elif mode == "bonus":
         # End previous session if switching to a different activity
-        if state.is_tracked_activity_running and state.tracked_activity_name != source_name:
+        if (
+            state.is_tracked_activity_running
+            and state.tracked_activity_name != source_name
+        ):
             used_s = int(state.seconds_used_this_session)
-            log_event("SESSION", message=f"session ended: {state.tracked_activity_name}, {used_s}s used")
+            log_event(
+                "SESSION",
+                message=f"session ended: {state.tracked_activity_name}, {used_s}s used",
+            )
             state.is_tracked_activity_running = False
             state.tracked_activity_name = ""
         # Bonus sites get sessions too (started/ended like consume).

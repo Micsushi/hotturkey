@@ -26,7 +26,6 @@ from hotturkey.tray import create_tray_icon, update_tray_icon
 from hotturkey.logger import log, log_event
 from hotturkey.utils import format_mmss
 
-
 _running = True
 _shutdown_reason = None
 
@@ -38,6 +37,14 @@ _PID_FILE = os.path.join(STATE_DIR, "run.pid")
 
 
 def monitor_loop():
+    try:
+        _monitor_loop_inner()
+    except Exception:
+        log.critical("[CRASH] monitor thread died with exception:", exc_info=True)
+        raise
+
+
+def _monitor_loop_inner():
     global _running, _shutdown_reason
 
     state = load_state()
@@ -215,4 +222,3 @@ def launch():
         sys.exit(0)
 
     main()
-

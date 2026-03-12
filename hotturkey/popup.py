@@ -1,8 +1,6 @@
 # popup.py -- Spawns fullscreen red terminal popups when you're in overtime.
 
 import subprocess
-import time
-
 from hotturkey.config import (
     MAX_PLAY_BUDGET,
     OVERTIME_INTERVAL_DECAY_FACTOR,
@@ -32,8 +30,6 @@ def show_fullscreen_popup(message):
 def check_and_trigger_popups(state):
     """Called every poll cycle. In overtime, show fullscreen warnings by level:
     L1 at budget 0, L2 at 50% of budget in overtime, L3+ at halved steps."""
-    now = time.time()
-
     is_active = state.is_tracked_activity_running
 
     # Overtime popups based on how much *overtime* we've accumulated.
@@ -69,7 +65,7 @@ def check_and_trigger_popups(state):
         level = 2
         interval = base_interval * OVERTIME_INTERVAL_DECAY_FACTOR
 
-        while remaining_for_higher >= interval and interval >= 1.0:
+        while remaining_for_higher >= 1.0 and remaining_for_higher >= interval:
             remaining_for_higher -= interval
             level += 1
             interval *= OVERTIME_INTERVAL_DECAY_FACTOR
@@ -99,6 +95,5 @@ def check_and_trigger_popups(state):
             )
         else:
             show_fullscreen_popup(
-                f"STILL GOING -- {used} used. "
-                f"Overtime L{level} reached. Stop now!"
+                f"STILL GOING -- {used} used. " f"Overtime L{level} reached. Stop now!"
             )

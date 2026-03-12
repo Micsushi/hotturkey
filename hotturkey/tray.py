@@ -12,7 +12,6 @@ from hotturkey.logger import log
 from hotturkey.state import load_extra_minutes_given_today
 from hotturkey.utils import format_mmss
 
-
 # Module-level references so update_tray_icon can reach the icon and state
 _icon = None
 _state_ref = None
@@ -50,7 +49,7 @@ def _build_icon_image(budget_seconds):
     return img
 
 
-def _on_status(icon, item):
+def _on_status(icon, item):  # pylint: disable=unused-argument
     """Right-click menu handler: opens a small terminal showing current budget info."""
     if _state_ref is None:
         return
@@ -81,7 +80,7 @@ def _on_status(icon, item):
     )
 
 
-def _on_show_logs(icon, item):
+def _on_show_logs(icon, item):  # pylint: disable=unused-argument
     """Right-click menu handler: opens a terminal that tails the log file in real time."""
     log_path = LOG_FILE.replace("'", "''")
     subprocess.Popen(
@@ -95,7 +94,7 @@ def _on_show_logs(icon, item):
     )
 
 
-def _on_quit(icon, item):
+def _on_quit(icon, item):  # pylint: disable=unused-argument
     """Right-click menu handler: shuts down the app."""
     log.info("[COMMAND] quit: user quit from tray.")
     if _quit_callback:
@@ -146,8 +145,4 @@ def update_tray_icon(state):
             f"Activity: {state.tracked_activity_name}"
         )
     else:
-        _icon.title = (
-            "HotTurkey\n"
-            f"{main_line}\n"
-            f"{extra_part}"
-        )
+        _icon.title = "HotTurkey\n" f"{main_line}\n" f"{extra_part}"

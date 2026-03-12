@@ -54,8 +54,8 @@ TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
 TRACKED_SITES = ["youtube", "watchseries", "hianime"]
 
 BONUS_SITES = [
-    "kwiziq",  
-    "leetcode", 
+    "kwiziq",
+    "leetcode",
 ]
 
 BONUS_RECOVERY_MULTIPLIER = 3.0

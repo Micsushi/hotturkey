@@ -16,8 +16,51 @@ dependencies = [
 ]
 
 [project.scripts]
-hotturkey = "hotturkey.cli:main"
+ht = "hotturkey.cli:main"
+ht-lint = "hotturkey.devtools:lint"
+ht-test = "hotturkey.devtools:test"
+ht-ci = "hotturkey.devtools:ci"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["hotturkey*"]
+
+[tool.pylint.main]
+load-plugins = []
+ignore-patterns = ["test_.*\\.py"]
+extension-pkg-allow-list = ["win32event", "win32api", "win32gui", "win32process"]
+
+[tool.pylint."messages control"]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-instance-attributes",
+    "broad-exception-caught",
+    "global-statement",
+    "global-variable-not-assigned",
+    "import-outside-toplevel",
+    "line-too-long",
+    "invalid-name",
+    "disallowed-name",
+    "unspecified-encoding",
+    "logging-fstring-interpolation",
+    "consider-using-with",
+    "consider-using-from-import",
+    "wrong-import-order",
+    "duplicate-code",
+    "trailing-newlines",
+    "missing-final-newline",
+    "attribute-defined-outside-init",
+]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

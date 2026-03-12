@@ -6,7 +6,12 @@ import sys
 
 import win32event
 
-from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY, STATE_DIR, LOG_LEVEL_FILE
+from hotturkey.config import (
+    MAX_PLAY_BUDGET,
+    MAX_EXTRA_MINUTES_PER_DAY,
+    STATE_DIR,
+    LOG_LEVEL_FILE,
+)
 from hotturkey.state import (
     load_state,
     load_extra_minutes_pending,
@@ -24,12 +29,20 @@ def handle_status():
     state = load_state()
     # Effective budget includes any pending extra minutes that haven't been picked up yet
     pending_minutes = load_extra_minutes_pending()
-    effective_seconds = max(0.0, state.remaining_budget_seconds + (pending_minutes * 60))
+    effective_seconds = max(
+        0.0, state.remaining_budget_seconds + (pending_minutes * 60)
+    )
     remaining = format_mmss(effective_seconds)
     overtime = format_mmss(getattr(state, "overtime_seconds", 0.0))
     total = format_mmss(MAX_PLAY_BUDGET)
-    activity = state.tracked_activity_name if state.is_tracked_activity_running else "None"
-    session = _format_time(state.seconds_used_this_session) if state.is_tracked_activity_running else "N/A"
+    activity = (
+        state.tracked_activity_name if state.is_tracked_activity_running else "None"
+    )
+    session = (
+        format_mmss(state.seconds_used_this_session)
+        if state.is_tracked_activity_running
+        else "N/A"
+    )
 
     print()
     print("  HotTurkey Status")
@@ -52,13 +65,19 @@ def handle_extra(minutes):
     if minutes > 0:
         given_today = load_extra_minutes_given_today()
         pending_minutes = load_extra_minutes_pending()
-        remaining_cap = max(0.0, MAX_EXTRA_MINUTES_PER_DAY - given_today - pending_minutes)
+        remaining_cap = max(
+            0.0, MAX_EXTRA_MINUTES_PER_DAY - given_today - pending_minutes
+        )
         if remaining_cap <= 0:
-            print(f"  Daily extra-minutes limit reached ({MAX_EXTRA_MINUTES_PER_DAY} min/day). Try again tomorrow.")
+            print(
+                f"  Daily extra-minutes limit reached ({MAX_EXTRA_MINUTES_PER_DAY} min/day). Try again tomorrow."
+            )
             sys.exit(1)
         if minutes > remaining_cap:
             minutes = remaining_cap
-            print(f"  Capped to {minutes:.0f} min (daily limit {MAX_EXTRA_MINUTES_PER_DAY} min).")
+            print(
+                f"  Capped to {minutes:.0f} min (daily limit {MAX_EXTRA_MINUTES_PER_DAY} min)."
+            )
 
     state = load_state()
     pending_minutes = load_extra_minutes_pending()
@@ -101,7 +120,9 @@ def handle_extra(minutes):
         print(f"  Added {minutes} minutes.")
     else:
         print(f"  Deducted {abs(minutes)} minutes.")
-    print(f"  Budget will be ~{format_mmss(effective_seconds)} (next poll if app is running).")
+    print(
+        f"  Budget will be ~{format_mmss(effective_seconds)} (next poll if app is running)."
+    )
     if future_overtime > 0:
         print(f"  Overtime debt will be ~{format_mmss(future_overtime)}.")
     print()
@@ -145,7 +166,9 @@ def handle_reset():
     total = format_mmss(MAX_PLAY_BUDGET)
     print()
     print("  State reset to default.")
-    print(f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{MAX_EXTRA_MINUTES_PER_DAY}.")
+    print(
+        f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{MAX_EXTRA_MINUTES_PER_DAY}."
+    )
     print("  Pending extra and set commands cleared.")
     print("  (Takes effect on next poll if app is running.)")
     print()
@@ -215,23 +238,40 @@ def handle_lesslog():
 
 def main():
     """Parse command-line arguments and route to the right handler."""
-    parser = argparse.ArgumentParser(prog="hotturkey", description="HotTurkey screen time enforcer")
+    parser = argparse.ArgumentParser(
+        prog="hotturkey", description="HotTurkey screen time enforcer"
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("status", help="Show current budget and tracking info")
 
-    extra_parser = subparsers.add_parser("extra", help="Add or remove play time in minutes (negative to deduct)")
-    extra_parser.add_argument("minutes", type=float, help="Minutes to add (positive) or deduct (negative)")
+    extra_parser = subparsers.add_parser(
+        "extra", help="Add or remove play time in minutes (negative to deduct)"
+    )
+    extra_parser.add_argument(
+        "minutes", type=float, help="Minutes to add (positive) or deduct (negative)"
+    )
 
-    set_parser = subparsers.add_parser("set", help="Set budget to an exact number of minutes")
-    set_parser.add_argument("minutes", type=float, help="Total minutes of budget to allow")
+    set_parser = subparsers.add_parser(
+        "set", help="Set budget to an exact number of minutes"
+    )
+    set_parser.add_argument(
+        "minutes", type=float, help="Total minutes of budget to allow"
+    )
 
-    subparsers.add_parser("reset", help="Reset all state to default (full budget, zero overtime, extra today cleared)")
+    subparsers.add_parser(
+        "reset",
+        help="Reset all state to default (full budget, zero overtime, extra today cleared)",
+    )
 
-    subparsers.add_parser("run", help="Start HotTurkey (tray + monitor) in the background")
+    subparsers.add_parser(
+        "run", help="Start HotTurkey (tray + monitor) in the background"
+    )
     subparsers.add_parser("stop", help="Ask the running HotTurkey process to exit")
 
-    subparsers.add_parser("morelog", help="Set log level to DEBUG and restart HotTurkey")
+    subparsers.add_parser(
+        "morelog", help="Set log level to DEBUG and restart HotTurkey"
+    )
     subparsers.add_parser("lesslog", help="Set log level to INFO and restart HotTurkey")
 
     args = parser.parse_args()

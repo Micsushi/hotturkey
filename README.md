@@ -53,7 +53,7 @@ python run.py
 or, after the setup command above you can just run this in any terminal that is in that python env and your python scripts folder is in your path:
 
 ```text
-hotturkey run
+ht run
 ```
 
 Both commands start a **background process** and exit; you can close the terminal. HotTurkey keeps running.
@@ -73,15 +73,15 @@ In a **separate** terminal (after `pip install -e .`):
 
 | Command | Effect |
 |--------|--------|
-| `hotturkey status` | Show budget, overtime debt, activity, session time, overtime level. |
-| `hotturkey extra 30` | Add 30 minutes. Positive time clears overtime debt first, then adds to budget. |
-| `hotturkey extra -10` | Remove 10 minutes from budget; if that would go below 0, the rest becomes overtime debt. |
-| `hotturkey set 30` | Set budget to 30 minutes remaining and clear overtime. |
-| `hotturkey set -15` | Set budget to 0 and overtime debt to 15 minutes. |
-| `hotturkey set 0` | Set both budget and overtime to 0. |
-| `hotturkey stop` | Ask the running HotTurkey background process to exit. |
-| `hotturkey morelog` | Switch log level to DEBUG (verbose, includes `[PERF]` timing) for the running app and future runs. |
-| `hotturkey lesslog` | Switch log level back to INFO (normal, concise logs) for the running app and future runs. |
+| `ht status` | Show budget, overtime debt, activity, session time, overtime level. |
+| `ht extra 30` | Add 30 minutes. Positive time clears overtime debt first, then adds to budget. |
+| `ht extra -10` | Remove 10 minutes from budget; if that would go below 0, the rest becomes overtime debt. |
+| `ht set 30` | Set budget to 30 minutes remaining and clear overtime. |
+| `ht set -15` | Set budget to 0 and overtime debt to 15 minutes. |
+| `ht set 0` | Set both budget and overtime to 0. |
+| `ht stop` | Ask the running HotTurkey background process to exit. |
+| `ht morelog` | Switch log level to DEBUG (verbose, includes `[PERF]` timing) for the running app and future runs. |
+| `ht lesslog` | Switch log level back to INFO (normal, concise logs) for the running app and future runs. |
 
 Changes are applied on the next poll when the app is running. 
 
@@ -90,3 +90,34 @@ Changes are applied on the next poll when the app is running.
 1. `Win + R` → `shell:startup` → Enter.
 2. New shortcut → Target: `"C:\Path\To\Python\python.exe" "C:\Path\To\hotturkey\run.py"`.
 3. Name it e.g. HotTurkey. Optionally set **Start in** to the project folder and **Run** to Minimized.
+
+<hr style="border: 5px solid black;">
+
+## Dev commands (tests & lint)
+
+After `pip install -e .` you get a few helper commands:
+
+- **Run tests**
+
+  ```powershell
+  ht-test
+  ```
+
+  (Equivalent to `python -m pytest -v`.)
+
+- **Run lint**
+
+  ```powershell
+  ht-lint
+  ```
+
+  (Equivalent to `python -m pylint hotturkey/ --rcfile=pyproject.toml`.)
+
+- **Run both (CI-style)**
+
+  ```powershell
+  ht-ci
+  ```
+
+  which runs lint then tests, matching what the GitHub Action does.
+

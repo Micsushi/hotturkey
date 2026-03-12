@@ -123,10 +123,26 @@ def setup_logger():
         console_handler.setFormatter(ColorFormatter(base_format, datefmt=datefmt))
         logger.addHandler(console_handler)
 
-    # File with colors so Show logs (PowerShell tail) displays them
-    file_handler = FlushingFileHandler(LOG_FILE)
-    file_handler.setFormatter(ColorFormatter(base_format, datefmt=datefmt))
-    logger.addHandler(file_handler)
+    # File with colors so Show logs (PowerShell tail) displays them.
+    # In CI, use a workspace-local log file so tests don't write to the
+    # runner's real home directory. GitHub Actions sets CI=true.
+    log_file_path = LOG_FILE
+    if os.environ.get("CI") == "true":
+        ci_log_dir = os.path.join(os.getcwd(), ".hotturkey-ci")
+        try:
+            os.makedirs(ci_log_dir, exist_ok=True)
+            log_file_path = os.path.join(ci_log_dir, "hotturkey.log")
+        except OSError:
+            # If we can't create a CI log dir, fall back to the default path.
+            log_file_path = LOG_FILE
+
+    try:
+        file_handler = FlushingFileHandler(log_file_path)
+        file_handler.setFormatter(ColorFormatter(base_format, datefmt=datefmt))
+        logger.addHandler(file_handler)
+    except OSError:
+        # Fall back to console-only logging if the log file cannot be opened.
+        pass
 
     return logger
 

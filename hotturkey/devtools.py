@@ -1,4 +1,4 @@
-"""Helper entry points for development commands (lint, test, CI)."""
+# cli commands for development (lint, test, CI)
 
 from __future__ import annotations
 

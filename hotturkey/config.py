@@ -1,24 +1,39 @@
 import os
 
-# --- Production values ---
+# Configurable values
+
+# Total daily play budget in seconds (default: 1 hour).
 MAX_PLAY_BUDGET = 3600
-
+# Max extra minutes that can be granted via CLI per day.
 MAX_EXTRA_MINUTES_PER_DAY = 120
+# Fraction of a second recovered per idle/bonus second (0.5 = 1s idle -> 0.5s back).
 BUDGET_RECOVERY_PER_SECOND_RATIO = 0.5
+# Seconds between monitor polls.
 POLL_INTERVAL = 10
+# Seconds of no input before we treat the user as AFK.
 AFK_IDLE_THRESHOLD = 300
-# Each overtime popup level comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...)
+# Each overtime popup level comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...).
 OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
-# Overtime popups won't come faster than this (in seconds)
+# Minimum interval between overtime popups in seconds (never faster than this).
 OVERTIME_MIN_INTERVAL_SECONDS = 60
+# How much faster budget recovers on bonus sites vs normal idle (3x here).
+BONUS_RECOVERY_MULTIPLIER = 3.0
 
+# Browser related
+TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
+TRACKED_SITES = ["youtube", "watchseries", "hianime", "twitch", "reddit", "netflix"]
+BONUS_SITES = ["kwiziq", "leetcode", "github"]
 
 # --- Testing values ---
 # MAX_PLAY_BUDGET = 300
+# MAX_EXTRA_MINUTES_PER_DAY = 120
 # BUDGET_RECOVERY_PER_SECOND_RATIO = 0.5
-# POLL_INTERVAL = 5
+# POLL_INTERVAL = 1
+# AFK_IDLE_THRESHOLD= 300
 # OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 # OVERTIME_MIN_INTERVAL_SECONDS = 5
+# BONUS_RECOVERY_MULTIPLIER = 5.0
+
 
 # State is saved to a hidden .hotturkey folder in the user's home directory
 # (e.g. C:\Users\sushi\.hotturkey\state.json) so it survives restarts and
@@ -26,8 +41,6 @@ OVERTIME_MIN_INTERVAL_SECONDS = 60
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".hotturkey")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
-# Single-line file overwritten each poll with current numbers (no repeated log lines)
-STATUS_FILE = os.path.join(STATE_DIR, "status.txt")
 
 # Small text file that controls the log level (INFO/DEBUG/etc) so the CLI
 # can toggle verbosity without editing code.
@@ -49,13 +62,4 @@ STEAM_HELPER_PROCESS_NAMES = {
     "vrcompositor.exe",
 }
 
-TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
 
-TRACKED_SITES = ["youtube", "watchseries", "hianime"]
-
-BONUS_SITES = [
-    "kwiziq",
-    "leetcode",
-]
-
-BONUS_RECOVERY_MULTIPLIER = 3.0

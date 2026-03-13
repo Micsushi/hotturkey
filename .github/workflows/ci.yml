@@ -29,8 +29,8 @@ jobs:
 
       - name: Install built package and tools
         run: |
-          pip install dist/*.whl
-          pip install pytest pylint
+          python -m pip install dist/*.whl
+          python -m pip install pytest pylint
 
       - name: Run tests
         run: python -m pytest -v

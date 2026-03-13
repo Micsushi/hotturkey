@@ -38,6 +38,7 @@ def handle_status():
             Extra today      : {s['extra_today']} / {MAX_EXTRA_MINUTES_PER_DAY} min
             Total gaming     : {s['gaming_today']}
             Total browser    : {s['watching_today']}
+            Total social     : {s['social_today']}
             Total bonus      : {s['bonus_today']}
             Total other apps : {s['other_today']}
         """)

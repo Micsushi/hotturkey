@@ -66,6 +66,7 @@ def _on_status(icon, item):  # pylint: disable=unused-argument
         f" & echo   Extra today:   {s['extra_today']} / {MAX_EXTRA_MINUTES_PER_DAY} min"
         f" & echo   Total gaming:  {s['gaming_today']}"
         f" & echo   Total browser: {s['watching_today']}"
+        f" & echo   Total social:  {s['social_today']}"
         f" & echo   Total bonus:   {s['bonus_today']}"
         f" & echo   Total other:   {s['other_today']}"
         f" & echo."

@@ -22,7 +22,11 @@ from hotturkey.config import (
     POLL_INTERVAL,
     BONUS_SITES,
     BONUS_RECOVERY_MULTIPLIER,
+    BONUS_APPS,
+    BONUS_APPS_RECOVERY_MULTIPLIER,
     AFK_IDLE_THRESHOLD,
+    SOCIAL_APPS_OR_SITES,
+    SOCIAL_CONSUME_RATIO,
 )
 from hotturkey.logger import log, log_event
 from hotturkey.utils import format_mmss
@@ -215,23 +219,42 @@ def detect_tracked_site_focused(foreground_title):
     return ""
 
 
-def detect_bonus_site_focused(foreground_title):
-    """Check if the focused window is a 'bonus' (productive) site.
-    Returns a simple label like 'Leetcode' or empty string if no match."""
+def _match_title_keyword(foreground_title, keywords):
+    """Return a nicely formatted label if any keyword appears in the window title."""
     title_lower = foreground_title.lower()
-    for site in BONUS_SITES:
-        if site in title_lower:
-            # Capitalize the keyword for display (e.g. 'leetcode' -> 'Leetcode').
-            return site.replace("-", " ").title()
+    for name in keywords:
+        if name in title_lower:
+            # Capitalize nicely for display (e.g. 'leetcode' -> 'Leetcode').
+            return name.replace("-", " ").title()
     return ""
+
+
+def detect_bonus_site_focused(foreground_title):
+    """Check if the focused window is a 'bonus' (productive) site."""
+    return _match_title_keyword(foreground_title, BONUS_SITES)
+
+
+def detect_bonus_app_focused(foreground_title):
+    """Check if the focused window looks like a 'good' desktop app that should earn bonus time.
+    Matches by title keyword against BONUS_APPS."""
+    if not BONUS_APPS:
+        return ""
+    return _match_title_keyword(foreground_title, BONUS_APPS)
+
+
+def detect_social_focused(foreground_title):
+    """Check if the focused window looks like a social app/site (e.g. Discord, WhatsApp)."""
+    return _match_title_keyword(foreground_title, SOCIAL_APPS_OR_SITES)
 
 
 def detect_tracked_activity():
     """The main detection function. Checks the focused window against all detectors.
     Returns (mode, source_name) where mode is one of:
-      - 'consume' : tracked entertainment (Steam / tracked sites)
-      - 'bonus'   : productive / bonus sites (faster recovery)
-      - 'idle'    : nothing relevant focused
+      - 'consume'   : tracked entertainment (Steam / tracked video sites)
+      - 'social'    : social media apps/sites (Discord, WhatsApp) at reduced rate
+      - 'bonus'     : productive / bonus sites in the browser (fastest recovery)
+      - 'bonus_app' : productive desktop apps (slower 2x recovery)
+      - 'idle'      : nothing relevant focused
     """
     foreground_pid, foreground_title = get_foreground_window_info()
 
@@ -240,6 +263,10 @@ def detect_tracked_activity():
     if bonus_label:
         return "bonus", bonus_label
 
+    bonus_app_label = detect_bonus_app_focused(foreground_title)
+    if bonus_app_label:
+        return "bonus_app", bonus_app_label
+
     steam_game_name = detect_steam_game_focused(foreground_pid)
     if steam_game_name:
         return "consume", f"Steam: {steam_game_name}"
@@ -247,6 +274,10 @@ def detect_tracked_activity():
     browser_match = detect_tracked_site_focused(foreground_title)
     if browser_match:
         return "consume", browser_match
+
+    social_label = detect_social_focused(foreground_title)
+    if social_label:
+        return "social", social_label
 
     log.debug("[IDLE] status=no_activity")
     return "idle", ""
@@ -308,6 +339,7 @@ def _maybe_reset_session_totals_for_today(state) -> None:
         state.gaming_seconds_today = 0.0
         state.watching_seconds_today = 0.0
         state.bonus_seconds_today = 0.0
+        state.social_seconds_today = 0.0
         state.other_apps_seconds_today = 0.0
         state.session_totals_date = today_str
 
@@ -333,6 +365,10 @@ def _add_session_time_to_totals(state, seconds_used: float) -> None:
         state.bonus_seconds_today = getattr(state, "bonus_seconds_today", 0.0) + float(
             seconds_used
         )
+    elif mode == "social":
+        state.social_seconds_today = getattr(
+            state, "social_seconds_today", 0.0
+        ) + float(seconds_used)
 
 
 def _end_session(state) -> None:
@@ -367,6 +403,9 @@ def consume_budget(state, elapsed_seconds):
     so we can later show and "pay back" that debt before refilling normal
     budget.
     """
+    if elapsed_seconds <= 0:
+        return
+
     before_budget = state.remaining_budget_seconds
     before_overtime = state.overtime_seconds
 
@@ -649,7 +688,7 @@ def update_budget(state):
     mode, source_name = detect_tracked_activity()
     detect_end = time.time()
 
-    # Log focus changes: entering an activity (BONUS/WATCHING/GAMING) or leaving to idle.
+    # Log focus changes: entering an activity (BONUS/WATCHING/GAMING/SOCIAL) or leaving to idle.
     global _last_focused_activity
     if mode == "idle":
         if _last_focused_activity is not None:
@@ -659,6 +698,8 @@ def update_budget(state):
         _last_focused_activity = source_name
         if mode == "bonus":
             log_event("BONUS", message=f"{source_name} focused")
+        elif mode == "bonus_app":
+            log_event("BONUS", message=f"app: {source_name} focused")
         elif mode == "consume":
             if source_name.startswith("Steam:"):
                 log_event(
@@ -666,6 +707,8 @@ def update_budget(state):
                 )
             else:
                 log_event("WATCHING", message=f"{source_name} focused")
+        elif mode == "social":
+            log_event("FOCUS", message=f"social: {source_name} focused")
 
     if mode == "consume":
         is_steam_session = source_name.startswith("Steam:")
@@ -694,6 +737,27 @@ def update_budget(state):
         state.seconds_used_this_session += elapsed_seconds
         if not is_afk:
             recover_budget(state, elapsed_seconds * BONUS_RECOVERY_MULTIPLIER)
+    elif mode == "bonus_app":
+        if state.tracked_activity_name != source_name:
+            _end_session(state)
+        _start_session(state, source_name, "bonus", now)
+
+        state.is_tracked_activity_running = True
+        state.tracked_activity_name = source_name
+        state.seconds_used_this_session += elapsed_seconds
+        if not is_afk:
+            recover_budget(state, elapsed_seconds * BONUS_APPS_RECOVERY_MULTIPLIER)
+    elif mode == "social":
+        if state.tracked_activity_name != source_name:
+            _end_session(state)
+        _start_session(state, source_name, "social", now)
+
+        state.is_tracked_activity_running = True
+        state.tracked_activity_name = source_name
+        state.seconds_used_this_session += elapsed_seconds
+        # Social media always counts (like watching): no AFK freeze, but budget
+        # consumption is reduced by SOCIAL_CONSUME_RATIO.
+        consume_budget(state, elapsed_seconds * SOCIAL_CONSUME_RATIO)
     else:
         _end_session(state)
 

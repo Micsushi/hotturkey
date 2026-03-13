@@ -18,11 +18,18 @@ OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 OVERTIME_MIN_INTERVAL_SECONDS = 60
 # How much faster budget recovers on bonus sites vs normal idle (3x here).
 BONUS_RECOVERY_MULTIPLIER = 3.0
+# Good desktop apps that earn bonus time (e.g. coding, study tools) recover more slowly.
+BONUS_APPS_RECOVERY_MULTIPLIER = 2.0
+# Social media consumes budget more slowly than games/videos (0.5 = half speed).
+SOCIAL_CONSUME_RATIO = 0.5
 
-# Browser related
+# Browser / app detection
 TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
-TRACKED_SITES = ["youtube", "watchseries", "hianime", "twitch", "reddit", "netflix"]
+TRACKED_SITES = ["youtube", "watchseries", "hianime", "twitch", "reddit", "netflix", "9animetv"]
 BONUS_SITES = ["kwiziq", "leetcode", "github"]
+BONUS_APPS = ["cursor", "vscode", "terminal", "command prompt"]
+SOCIAL_APPS_OR_SITES = ["whatsapp", "discord"]
+
 
 # --- Testing values ---
 # MAX_PLAY_BUDGET = 300
@@ -33,6 +40,8 @@ BONUS_SITES = ["kwiziq", "leetcode", "github"]
 # OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 # OVERTIME_MIN_INTERVAL_SECONDS = 5
 # BONUS_RECOVERY_MULTIPLIER = 5.0
+# BONUS_APPS_RECOVERY_MULTIPLIER = 2.0
+# SOCIAL_CONSUME_RATIO = 0.5
 
 
 # State is saved to a hidden .hotturkey folder in the user's home directory

@@ -59,6 +59,7 @@ class AppState:
         self.gaming_seconds_today = 0.0
         self.watching_seconds_today = 0.0
         self.bonus_seconds_today = 0.0
+        self.social_seconds_today = 0.0
         self.other_apps_seconds_today = 0.0
         self.session_totals_date = date.today().isoformat()
 
@@ -84,6 +85,7 @@ class AppState:
             "gaming_seconds_today": self.gaming_seconds_today,
             "watching_seconds_today": self.watching_seconds_today,
             "bonus_seconds_today": self.bonus_seconds_today,
+            "social_seconds_today": self.social_seconds_today,
             "other_apps_seconds_today": self.other_apps_seconds_today,
             "session_totals_date": self.session_totals_date,
             "known_steam_game_exes": self.known_steam_game_exes,
@@ -118,6 +120,7 @@ class AppState:
         self.gaming_seconds_today = data.get("gaming_seconds_today", consume_fallback)
         self.watching_seconds_today = data.get("watching_seconds_today", 0.0)
         self.bonus_seconds_today = data.get("bonus_seconds_today", 0.0)
+        self.social_seconds_today = data.get("social_seconds_today", 0.0)
         self.other_apps_seconds_today = data.get("other_apps_seconds_today", 0.0)
         self.session_totals_date = data.get(
             "session_totals_date", date.today().isoformat()
@@ -291,15 +294,20 @@ def gather_status_fields(state):
     effective_seconds = max(
         0.0, state.remaining_budget_seconds + (pending_minutes * 60)
     )
+    extra_given_today = load_extra_minutes_given_today()
+    # For display, include positive pending minutes so CLI/tray show the
+    # effective extra immediately after an `ht extra` command.
+    display_extra_today = int(extra_given_today + max(0.0, pending_minutes))
     return {
         "remaining": format_mmss(effective_seconds),
         "overtime": format_mmss(getattr(state, "overtime_seconds", 0.0)),
         "total": format_mmss(MAX_PLAY_BUDGET),
-        "extra_today": int(load_extra_minutes_given_today()),
+        "extra_today": display_extra_today,
         "overtime_level": getattr(state, "overtime_escalation_level", 0),
         "gaming_today": format_mmss(getattr(state, "gaming_seconds_today", 0.0)),
         "watching_today": format_mmss(getattr(state, "watching_seconds_today", 0.0)),
         "bonus_today": format_mmss(getattr(state, "bonus_seconds_today", 0.0)),
+        "social_today": format_mmss(getattr(state, "social_seconds_today", 0.0)),
         "other_today": format_mmss(getattr(state, "other_apps_seconds_today", 0.0)),
     }
 

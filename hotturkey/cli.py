@@ -3,7 +3,6 @@
 import argparse
 import os
 import sys
-
 import win32event
 
 from hotturkey.config import (
@@ -19,45 +18,35 @@ from hotturkey.state import (
     save_extra_minutes_pending,
     save_set_minutes,
     reset_state_to_default,
+    apply_extra_seconds,
+    gather_status_fields,
 )
 from hotturkey.utils import format_mmss
 from . import runner
 
 
 def handle_status():
-    """Read state.json and print the current budget, activity, and session info."""
+    """Read state.json and print the current budget and overtime info."""
     state = load_state()
-    # Effective budget includes any pending extra minutes that haven't been picked up yet
-    pending_minutes = load_extra_minutes_pending()
-    effective_seconds = max(
-        0.0, state.remaining_budget_seconds + (pending_minutes * 60)
-    )
-    remaining = format_mmss(effective_seconds)
-    overtime = format_mmss(getattr(state, "overtime_seconds", 0.0))
-    total = format_mmss(MAX_PLAY_BUDGET)
-    activity = (
-        state.tracked_activity_name if state.is_tracked_activity_running else "None"
-    )
-    session = (
-        format_mmss(state.seconds_used_this_session)
-        if state.is_tracked_activity_running
-        else "N/A"
-    )
+    s = gather_status_fields(state)
 
-    print()
-    print("  HotTurkey Status")
-    print(f"    Budget remaining : {remaining} / {total}")
-    print(f"    Overtime debt    : {overtime}")
-    print(f"    Active tracking  : {activity}")
-    print(f"    Session time     : {session}")
-    print(f"    Overtime level   : {state.overtime_escalation_level}")
-    print()
+    print(f"""
+            HotTurkey Status
+            Budget remaining : {s['remaining']} / {s['total']}
+            Overtime debt    : {s['overtime']}
+            Overtime level   : {s['overtime_level']}
+            Extra today      : {s['extra_today']} / {MAX_EXTRA_MINUTES_PER_DAY} min
+            Total gaming     : {s['gaming_today']}
+            Total browser    : {s['watching_today']}
+            Total bonus      : {s['bonus_today']}
+            Total other apps : {s['other_today']}
+        """)
 
 
 def handle_extra(minutes):
     """Add or remove minutes from the budget. Positive adds, negative deducts.
-    Works whether the app is running or not. Budget never goes below 0 when deducting.
-    Positive extra is capped by MAX_EXTRA_MINUTES_PER_DAY (resets each day)."""
+    If add is not running it will queue the extra when starting up.
+    Positive extra is capped by MAX_EXTRA_MINUTES_PER_DAY"""
     if minutes == 0:
         print("  Minutes can't be 0.")
         sys.exit(1)
@@ -84,37 +73,16 @@ def handle_extra(minutes):
     pending_minutes += minutes
     save_extra_minutes_pending(pending_minutes)
 
-    # Predict what the budget and overtime will be once the app (if running)
-    # picks up all pending extra minutes, using the same rules as the monitor:
-    #   - Positive extra clears overtime first, then adds to budget
-    #   - Negative extra deducts from budget first, then becomes overtime debt
-    pending_minutes = load_extra_minutes_pending()
-    extra_seconds = pending_minutes * 60
-    before_budget = state.remaining_budget_seconds
-    before_overtime = getattr(state, "overtime_seconds", 0.0)
+    # predict future budget/overtime
+    pending_minutes_total = load_extra_minutes_pending()
+    pending_secs = pending_minutes_total * 60
+    budget_before = state.remaining_budget_seconds
+    overtime_before = getattr(state, "overtime_seconds", 0.0)
+    budget_after, overtime_after = apply_extra_seconds(
+        budget_before, overtime_before, pending_secs
+    )
 
-    future_budget = before_budget
-    future_overtime = before_overtime
-
-    if extra_seconds > 0:
-        # Clear overtime, then add remainder to budget.
-        debt_cleared = min(before_overtime, extra_seconds)
-        future_overtime = before_overtime - debt_cleared
-        extra_seconds -= debt_cleared
-        if extra_seconds > 0:
-            future_budget = max(0.0, before_budget + extra_seconds)
-    elif extra_seconds < 0:
-        # Deduct from budget, then any remainder becomes overtime.
-        delta = extra_seconds  # negative
-        new_budget = before_budget + delta
-        if new_budget >= 0:
-            future_budget = new_budget
-        else:
-            future_budget = 0.0
-            overdraw = -new_budget
-            future_overtime = before_overtime + overdraw
-
-    effective_seconds = max(0.0, future_budget)
+    effective_seconds = max(0.0, budget_after)
     print()
     if minutes > 0:
         print(f"  Added {minutes} minutes.")
@@ -123,27 +91,18 @@ def handle_extra(minutes):
     print(
         f"  Budget will be ~{format_mmss(effective_seconds)} (next poll if app is running)."
     )
-    if future_overtime > 0:
-        print(f"  Overtime debt will be ~{format_mmss(future_overtime)}.")
+    if overtime_after > 0:
+        print(f"  Overtime debt will be ~{format_mmss(overtime_after)}.")
     print()
 
 
 def handle_set(minutes):
-    """Set budget/overtime explicitly.
-
-    Semantics:
-      - Positive minutes: set remaining budget to this many minutes and clear
-        any overtime debt.
-      - Negative minutes: set budget to 0 and set overtime debt to abs(minutes)
-        minutes.
-      - Zero: set both budget and overtime to 0.
-
-    Implemented via a small sidecar file so it works whether the app is running
-    or not; the monitor picks it up on the next poll.
+    """Set budget/overtime explicitly
+    - Positive minutes: set remaining budget to this and clear any overtime
+    - Negative minutes: set budget to 0 and set overtime to this
+    - Zero: set both budget and overtime to 0.
     """
-    # Clear any pending extra-time deltas so 'set' is an absolute override.
     save_extra_minutes_pending(0.0)
-
     save_set_minutes(minutes)
 
     print()
@@ -175,12 +134,10 @@ def handle_reset():
 
 
 def handle_run():
-    """Start the HotTurkey background process (same as `python run.py`)."""
     runner.launch()
 
 
 def handle_stop():
-    """Ask the running HotTurkey background process to exit."""
     pid_file = os.path.join(STATE_DIR, "run.pid")
 
     try:
@@ -219,7 +176,6 @@ def _set_log_level(level_name: str):
 
 
 def handle_morelog():
-    """Increase logging verbosity to DEBUG for the running app and future runs."""
     _set_log_level("DEBUG")
     print()
     print("  Log level set to DEBUG (verbose, includes [PERF] timing).")
@@ -228,7 +184,6 @@ def handle_morelog():
 
 
 def handle_lesslog():
-    """Reduce logging verbosity to INFO for the running app and future runs."""
     _set_log_level("INFO")
     print()
     print("  Log level set to INFO (normal, concise logs).")

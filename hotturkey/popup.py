@@ -1,13 +1,9 @@
 # popup.py -- Spawns fullscreen red terminal popups when you're in overtime.
 
 import subprocess
-from hotturkey.config import (
-    MAX_PLAY_BUDGET,
-    OVERTIME_INTERVAL_DECAY_FACTOR,
-    OVERTIME_MIN_INTERVAL_SECONDS,
-)
 from hotturkey.logger import log
 from hotturkey.utils import format_mmss
+from hotturkey.state import overtime_level_from_debt
 
 
 def show_fullscreen_popup(message):
@@ -44,33 +40,8 @@ def check_and_trigger_popups(state):
         state.overtime_escalation_level = 0
         return
 
-    # Base overtime interval is 50% of the budget, but never less than the
-    # configured minimum interval. For a 60 min budget, this is 30 min.
-    base_interval = max(
-        float(OVERTIME_MIN_INTERVAL_SECONDS),
-        0.5 * float(MAX_PLAY_BUDGET),
-    )
-
-    # Determine which overtime "level" we're currently in:
-    #   - Level 1: any overtime > 0 (just hit budget 0)
-    #   - Level 2: >= base_interval overtime (50% over budget)
-    #   - Level 3: >= base_interval + base_interval*0.5 (75% over budget), etc.
-    level = 1  # we've already confirmed overtime > 0
-
-    remaining = overtime
-    # First chunk corresponds to Level 2 threshold.
-    remaining_for_higher = max(0.0, remaining - base_interval)
-
-    if remaining_for_higher > 0:
-        level = 2
-        interval = base_interval * OVERTIME_INTERVAL_DECAY_FACTOR
-
-        while remaining_for_higher >= 1.0 and remaining_for_higher >= interval:
-            remaining_for_higher -= interval
-            level += 1
-            interval *= OVERTIME_INTERVAL_DECAY_FACTOR
-            if interval < 1.0:
-                break
+    # Compute overtime level using shared helper.
+    level = overtime_level_from_debt(overtime)
 
     prev_level = state.overtime_escalation_level
 

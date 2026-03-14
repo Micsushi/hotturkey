@@ -21,7 +21,7 @@ from hotturkey.state import (
     apply_extra_seconds,
     gather_status_fields,
 )
-from hotturkey.utils import format_mmss
+from hotturkey.utils import format_duration
 from . import runner
 
 
@@ -90,10 +90,10 @@ def handle_extra(minutes):
     else:
         print(f"  Deducted {abs(minutes)} minutes.")
     print(
-        f"  Budget will be ~{format_mmss(effective_seconds)} (next poll if app is running)."
+        f"  Budget will be ~{format_duration(effective_seconds)} (next poll if app is running)."
     )
     if overtime_after > 0:
-        print(f"  Overtime debt will be ~{format_mmss(overtime_after)}.")
+        print(f"  Overtime debt will be ~{format_duration(overtime_after)}.")
     print()
 
 
@@ -108,12 +108,12 @@ def handle_set(minutes):
 
     print()
     if minutes > 0:
-        print(f"  Budget will be set to: {format_mmss(minutes * 60)} remaining.")
+        print(f"  Budget will be set to: {format_duration(minutes * 60)} remaining.")
         print("  Overtime will be cleared to 0.")
     elif minutes < 0:
         debt_minutes = abs(minutes)
         print("  Budget will be set to: 0:00.")
-        print(f"  Overtime debt will be set to: {format_mmss(debt_minutes * 60)}.")
+        print(f"  Overtime debt will be set to: {format_duration(debt_minutes * 60)}.")
     else:
         print("  Budget and overtime will be reset to 0:00.")
     print("  (Takes effect on next poll if app is running.)")
@@ -123,7 +123,7 @@ def handle_set(minutes):
 def handle_reset():
     """Reset all state to default: full budget, zero overtime, extra today cleared."""
     reset_state_to_default()
-    total = format_mmss(MAX_PLAY_BUDGET)
+    total = format_duration(MAX_PLAY_BUDGET)
     print()
     print("  State reset to default.")
     print(

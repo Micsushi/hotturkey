@@ -26,7 +26,7 @@ from hotturkey.monitor import update_budget
 from hotturkey.popup import check_and_trigger_popups
 from hotturkey.tray import create_tray_icon, update_tray_icon
 from hotturkey.logger import log, log_event, refresh_log_level_from_disk
-from hotturkey.utils import format_mmss
+from hotturkey.utils import format_duration
 
 _running = True
 _shutdown_reason = None
@@ -49,9 +49,9 @@ def _reset_session_state(state) -> None:
 
 def _log_start_snapshot(state, *, event: str = "start") -> None:
     """Log a START snapshot for the current state"""
-    remaining_time = format_mmss(state.remaining_budget_seconds)
-    max_time = format_mmss(MAX_PLAY_BUDGET)
-    overtime_used = format_mmss(getattr(state, "overtime_seconds", 0.0))
+    remaining_time = format_duration(state.remaining_budget_seconds)
+    max_time = format_duration(MAX_PLAY_BUDGET)
+    overtime_used = format_duration(getattr(state, "overtime_seconds", 0.0))
     extra_time_used = load_extra_minutes_given_today()
 
     log_event(

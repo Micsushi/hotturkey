@@ -288,7 +288,7 @@ def gather_status_fields(state):
 
     Used by both the CLI and the tray popup so the data logic lives in one place.
     """
-    from hotturkey.utils import format_mmss  # local import to avoid circular dependency
+    from hotturkey.utils import format_duration  # local import to avoid circular dependency
 
     pending_minutes = load_extra_minutes_pending()
     effective_seconds = max(
@@ -299,16 +299,16 @@ def gather_status_fields(state):
     # effective extra immediately after an `ht extra` command.
     display_extra_today = int(extra_given_today + max(0.0, pending_minutes))
     return {
-        "remaining": format_mmss(effective_seconds),
-        "overtime": format_mmss(getattr(state, "overtime_seconds", 0.0)),
-        "total": format_mmss(MAX_PLAY_BUDGET),
+        "remaining": format_duration(effective_seconds),
+        "overtime": format_duration(getattr(state, "overtime_seconds", 0.0)),
+        "total": format_duration(MAX_PLAY_BUDGET),
         "extra_today": display_extra_today,
         "overtime_level": getattr(state, "overtime_escalation_level", 0),
-        "gaming_today": format_mmss(getattr(state, "gaming_seconds_today", 0.0)),
-        "watching_today": format_mmss(getattr(state, "watching_seconds_today", 0.0)),
-        "bonus_today": format_mmss(getattr(state, "bonus_seconds_today", 0.0)),
-        "social_today": format_mmss(getattr(state, "social_seconds_today", 0.0)),
-        "other_today": format_mmss(getattr(state, "other_apps_seconds_today", 0.0)),
+        "gaming_today": format_duration(getattr(state, "gaming_seconds_today", 0.0)),
+        "watching_today": format_duration(getattr(state, "watching_seconds_today", 0.0)),
+        "bonus_today": format_duration(getattr(state, "bonus_seconds_today", 0.0)),
+        "social_today": format_duration(getattr(state, "social_seconds_today", 0.0)),
+        "other_today": format_duration(getattr(state, "other_apps_seconds_today", 0.0)),
     }
 
 

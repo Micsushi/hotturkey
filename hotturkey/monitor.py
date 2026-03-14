@@ -29,7 +29,7 @@ from hotturkey.config import (
     SOCIAL_CONSUME_RATIO,
 )
 from hotturkey.logger import log, log_event
-from hotturkey.utils import format_mmss
+from hotturkey.utils import format_duration
 from hotturkey.state import (
     load_extra_minutes_pending,
     save_extra_minutes_pending,
@@ -315,7 +315,7 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
         overtime = getattr(state, "overtime_seconds", 0.0)
         if overtime > 0:
             level = overtime_level_from_debt(overtime)
-            suffix_parts.append(f"overtime L{level} {format_mmss(overtime)}")
+            suffix_parts.append(f"overtime L{level} {format_duration(overtime)}")
     elif is_recovering:
         if percent == 0:
             suffix_parts.append("full")
@@ -427,7 +427,7 @@ def consume_budget(state, elapsed_seconds):
 
     spent = max(0.0, before_budget - state.remaining_budget_seconds)
     bar = _format_budget_bar(state, is_recovering=False)
-    remaining_str = format_mmss(state.remaining_budget_seconds)
+    remaining_str = format_duration(state.remaining_budget_seconds)
     budget_delta = -spent
     overtime_delta = overtime_added
     log.info(
@@ -486,7 +486,7 @@ def recover_budget(state, elapsed_seconds):
         state.overtime_next_popup_timestamp = 0.0
 
     bar = _format_budget_bar(state, is_recovering=True)
-    remaining_str = format_mmss(state.remaining_budget_seconds)
+    remaining_str = format_duration(state.remaining_budget_seconds)
     budget_delta = gained
     overtime_delta = -debt_paid
     if budget_delta != 0 or overtime_delta != 0:
@@ -525,8 +525,8 @@ def apply_pending_extra_time(state):
     if pending_minutes > 0:
         add_extra_minutes_given_today(pending_minutes)
 
-    remaining_str = format_mmss(state.remaining_budget_seconds)
-    debt_str = format_mmss(state.overtime_seconds)
+    remaining_str = format_duration(state.remaining_budget_seconds)
+    debt_str = format_duration(state.overtime_seconds)
     extra_today = int(load_extra_minutes_given_today())
 
     if extra_seconds > 0:

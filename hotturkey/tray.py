@@ -13,7 +13,7 @@ from hotturkey.state import (
     load_extra_minutes_given_today,
     gather_status_fields,
 )
-from hotturkey.utils import format_mmss
+from hotturkey.utils import format_duration
 
 # Module-level references so update_tray_icon can reach the icon and state
 _icon = None
@@ -123,9 +123,9 @@ def update_tray_icon(state):
     _icon.icon = _build_icon_image(state.remaining_budget_seconds)
 
     remaining_seconds = max(0.0, state.remaining_budget_seconds)
-    remaining = format_mmss(remaining_seconds)
+    remaining = format_duration(remaining_seconds)
     overtime_seconds = getattr(state, "overtime_seconds", 0.0)
-    overtime_str = format_mmss(overtime_seconds)
+    overtime_str = format_duration(overtime_seconds)
     extra_today = int(load_extra_minutes_given_today())
 
     if overtime_seconds > 0:

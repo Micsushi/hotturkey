@@ -2,7 +2,7 @@
 
 import subprocess
 from hotturkey.logger import log
-from hotturkey.utils import format_mmss
+from hotturkey.utils import format_duration
 from hotturkey.state import overtime_level_from_debt
 
 
@@ -57,7 +57,7 @@ def check_and_trigger_popups(state):
 
     # When we cross into a *new* level during an active session, fire a popup.
     if level > prev_level:
-        used = format_mmss(state.seconds_used_this_session)
+        used = format_duration(state.seconds_used_this_session)
 
         if level == 1:
             show_fullscreen_popup(

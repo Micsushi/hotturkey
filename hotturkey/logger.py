@@ -1,29 +1,20 @@
 # logger.py -- Sets up logging so output goes to both the terminal and a log file.
-# Other modules import "log" from here and use log.info(), log.debug(), etc.
-# Console output is color-coded by tag, file output stays plain text.
-# When running detached (no terminal), only the file handler is used.
-#
 # Logging convention: every line starts with [TAG] for easy grep/parsing.
-# Standard tags: START, STOP, BUDGET, COMMAND (extra/set/reset/start/quit), SESSION, IDLE,
-# FOCUS (e.g. "other apps" when leaving a tracked window), GAMING, WATCHING, BONUS, POPUP, TRAY, PERF, DEBUG.
-# Use log_event(tag, message="...") for human-readable lines, or log_event(tag, key=val, ...) for key=value.
 
 import logging
 import os
 
 from hotturkey.config import STATE_DIR, LOG_FILE, LOG_LEVEL_FILE
 
-# Simplified ANSI colors:
 # - Green for budget recovery
 # - Red for budget consumption
-# - Blue for "full budget" lines
-# - Pastel yellow for [COMMAND] (user actions: extra, set, reset, start, quit)
+# - Blue for budget full
+# - Pastel yellow for [COMMAND]
 # - Cyan for everything else
 GREEN = "\033[92m"
 RED = "\033[91m"
 BLUE = "\033[94m"
 CYAN = "\033[96m"
-# Pastel yellow (256-color palette)
 PASTEL_YELLOW = "\033[38;5;227m"
 RESET = "\033[0m"
 
@@ -46,7 +37,7 @@ class ColorFormatter(logging.Formatter):
         if "[COMMAND]" in base_message:
             color = PASTEL_YELLOW
         elif "[BUDGET]" in base_message:
-            if " full " in base_message:
+            if " full " in base_message or "| full" in base_message:
                 color = BLUE
             # budget + or overtime - = repaying (green); budget - or overtime + = consuming (red)
             elif "budget +" in base_message or "overtime -" in base_message:

@@ -317,7 +317,7 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
             level = overtime_level_from_debt(overtime)
             suffix_parts.append(f"overtime L{level} {format_duration(overtime)}")
     elif is_recovering:
-        if percent == 0:
+        if state.remaining_budget_seconds >= cap and state.overtime_seconds <= 0:
             suffix_parts.append("full")
         else:
             suffix_parts.append("repaying budget")

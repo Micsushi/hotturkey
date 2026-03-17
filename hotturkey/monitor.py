@@ -17,7 +17,7 @@ from hotturkey.config import (
     TRACKED_BROWSERS,
     TRACKED_SITES,
     MAX_PLAY_BUDGET,
-    MAX_EXTRA_MINUTES_PER_DAY,
+    get_effective_max_extra_minutes_per_day,
     BUDGET_RECOVERY_PER_SECOND_RATIO,
     POLL_INTERVAL,
     BONUS_SITES,
@@ -528,6 +528,7 @@ def apply_pending_extra_time(state):
     remaining_str = format_duration(state.remaining_budget_seconds)
     debt_str = format_duration(state.overtime_seconds)
     extra_today = int(load_extra_minutes_given_today())
+    extra_cap = get_effective_max_extra_minutes_per_day()
 
     if extra_seconds > 0:
         debt_cleared = max(0.0, before_overtime - overtime_after)
@@ -539,7 +540,7 @@ def apply_pending_extra_time(state):
                 remaining_str,
                 debt_str,
                 extra_today,
-                MAX_EXTRA_MINUTES_PER_DAY,
+                extra_cap,
             )
         elif debt_cleared > 0:
             log.info(
@@ -548,7 +549,7 @@ def apply_pending_extra_time(state):
                 remaining_str,
                 debt_str,
                 extra_today,
-                MAX_EXTRA_MINUTES_PER_DAY,
+                extra_cap,
             )
         else:
             log.info(
@@ -557,7 +558,7 @@ def apply_pending_extra_time(state):
                 remaining_str,
                 debt_str,
                 extra_today,
-                MAX_EXTRA_MINUTES_PER_DAY,
+                extra_cap,
             )
     else:
         log.info(
@@ -566,7 +567,7 @@ def apply_pending_extra_time(state):
             remaining_str,
             debt_str,
             extra_today,
-            MAX_EXTRA_MINUTES_PER_DAY,
+            extra_cap,
         )
 
     # Clear the pending value so we don't apply it again on the next poll.

@@ -7,7 +7,11 @@ import subprocess
 import pystray
 from PIL import Image, ImageDraw
 
-from hotturkey.config import MAX_PLAY_BUDGET, MAX_EXTRA_MINUTES_PER_DAY, LOG_FILE
+from hotturkey.config import (
+    MAX_PLAY_BUDGET,
+    get_effective_max_extra_minutes_per_day,
+    LOG_FILE,
+)
 from hotturkey.logger import log
 from hotturkey.state import (
     load_extra_minutes_given_today,
@@ -63,7 +67,7 @@ def _on_status(icon, item):  # pylint: disable=unused-argument
         f" & echo   Budget:        {s['remaining']} / {s['total']}"
         f" & echo   Overtime:      {s['overtime']}"
         f" & echo   Overtime lvl:  {s['overtime_level']}"
-        f" & echo   Extra today:   {s['extra_today']} / {MAX_EXTRA_MINUTES_PER_DAY} min"
+        f" & echo   Extra today:   {s['extra_today']} / {get_effective_max_extra_minutes_per_day()} min"
         f" & echo   Total gaming:  {s['gaming_today']}"
         f" & echo   Total browser: {s['watching_today']}"
         f" & echo   Total social:  {s['social_today']}"
@@ -133,7 +137,7 @@ def update_tray_icon(state):
     else:
         main_line = f"Budget: {remaining}"
 
-    extra_part = f"Extra: {extra_today}/{MAX_EXTRA_MINUTES_PER_DAY}"
+    extra_part = f"Extra: {extra_today}/{get_effective_max_extra_minutes_per_day()}"
     if state.is_tracked_activity_running:
         _icon.title = (
             "HotTurkey\n"

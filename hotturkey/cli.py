@@ -8,6 +8,7 @@ import win32event
 from hotturkey.config import (
     MAX_PLAY_BUDGET,
     MAX_EXTRA_MINUTES_PER_DAY,
+    get_effective_max_extra_minutes_per_day,
     STATE_DIR,
     LOG_LEVEL_FILE,
 )
@@ -29,13 +30,14 @@ def handle_status():
     """Read state.json and print the current budget and overtime info."""
     state = load_state()
     s = gather_status_fields(state)
+    extra_cap = get_effective_max_extra_minutes_per_day()
 
     print(f"""
             HotTurkey Status
             Budget remaining : {s['remaining']} / {s['total']}
             Overtime debt    : {s['overtime']}
             Overtime level   : {s['overtime_level']}
-            Extra today      : {s['extra_today']} / {MAX_EXTRA_MINUTES_PER_DAY} min
+            Extra today      : {s['extra_today']} / {extra_cap} min
             Total gaming     : {s['gaming_today']}
             Total browser    : {s['watching_today']}
             Total social     : {s['social_today']}
@@ -47,26 +49,25 @@ def handle_status():
 def handle_extra(minutes):
     """Add or remove minutes from the budget. Positive adds, negative deducts.
     If add is not running it will queue the extra when starting up.
-    Positive extra is capped by MAX_EXTRA_MINUTES_PER_DAY"""
+    Positive extra is capped by the daily limit (double on Tue/Thu/Sat/Sun)."""
     if minutes == 0:
         print("  Minutes can't be 0.")
         sys.exit(1)
 
     if minutes > 0:
+        extra_cap = get_effective_max_extra_minutes_per_day()
         given_today = load_extra_minutes_given_today()
         pending_minutes = load_extra_minutes_pending()
-        remaining_cap = max(
-            0.0, MAX_EXTRA_MINUTES_PER_DAY - given_today - pending_minutes
-        )
+        remaining_cap = max(0.0, extra_cap - given_today - pending_minutes)
         if remaining_cap <= 0:
             print(
-                f"  Daily extra-minutes limit reached ({MAX_EXTRA_MINUTES_PER_DAY} min/day). Try again tomorrow."
+                f"  Daily extra-minutes limit reached ({extra_cap} min/day). Try again tomorrow."
             )
             sys.exit(1)
         if minutes > remaining_cap:
             minutes = remaining_cap
             print(
-                f"  Capped to {minutes:.0f} min (daily limit {MAX_EXTRA_MINUTES_PER_DAY} min)."
+                f"  Capped to {minutes:.0f} min (daily limit {extra_cap} min)."
             )
 
     state = load_state()
@@ -126,8 +127,9 @@ def handle_reset():
     total = format_duration(MAX_PLAY_BUDGET)
     print()
     print("  State reset to default.")
+    extra_cap = get_effective_max_extra_minutes_per_day()
     print(
-        f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{MAX_EXTRA_MINUTES_PER_DAY}."
+        f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{extra_cap}."
     )
     print("  Pending extra and set commands cleared.")
     print("  (Takes effect on next poll if app is running.)")
@@ -215,10 +217,12 @@ def main():
         "minutes", type=float, help="Total minutes of budget to allow"
     )
 
-    subparsers.add_parser(
-        "reset",
-        help="Reset all state to default (full budget, zero overtime, extra today cleared)",
-    )
+    # Temporarily disable the 'reset' command. Keeping the handler defined so we can
+    # re-enable this later without changing behavior elsewhere.
+    # subparsers.add_parser(
+    #     "reset",
+    #     help="Reset all state to default (full budget, zero overtime, extra today cleared)",
+    # )
 
     subparsers.add_parser(
         "run", help="Start HotTurkey (tray + monitor) in the background"
@@ -238,8 +242,9 @@ def main():
         handle_extra(args.minutes)
     elif args.command == "set":
         handle_set(args.minutes)
-    elif args.command == "reset":
-        handle_reset()
+    # 'reset' command is currently disabled.
+    # elif args.command == "reset":
+    #     handle_reset()
     elif args.command == "run":
         handle_run()
     elif args.command == "stop":

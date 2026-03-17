@@ -29,17 +29,14 @@ class ColorFormatter(logging.Formatter):
     """
 
     def format(self, record):
-        # Decide color based on the raw log message (without timestamp) so
-        # date dashes like "2026-03-04" don't trick us into thinking it's a
-        # budget consumption.
+        # Decide color based on the raw log message
         base_message = record.getMessage()
         color = None
         if "[COMMAND]" in base_message:
             color = PASTEL_YELLOW
         elif "[BUDGET]" in base_message:
-            if " full " in base_message or "| full" in base_message:
+            if "| full" in base_message:
                 color = BLUE
-            # budget + or overtime - = repaying (green); budget - or overtime + = consuming (red)
             elif "budget +" in base_message or "overtime -" in base_message:
                 color = GREEN
             elif "budget -" in base_message or "overtime +" in base_message:
@@ -48,7 +45,6 @@ class ColorFormatter(logging.Formatter):
         message = super().format(record)
 
         if color is None:
-            # All non-budget logs: cyan
             return f"{CYAN}{message}{RESET}"
 
         return f"{color}{message}{RESET}"

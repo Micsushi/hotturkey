@@ -1,4 +1,5 @@
 import os
+from datetime import date
 
 # Configurable values
 
@@ -6,6 +7,10 @@ import os
 MAX_PLAY_BUDGET = 3600
 # Max extra minutes that can be granted via CLI per day.
 MAX_EXTRA_MINUTES_PER_DAY = 120
+# Days of the week that get bonus extra-time cap (double). Monday=0, Sunday=6.
+# Tue, Thu, Sat, Sun get double the daily extra cap.
+EXTRA_TIME_BONUS_DAYS = (1, 3, 5, 6)
+EXTRA_TIME_BONUS_DAY_MULTIPLIER = 2.0
 # Fraction of a second recovered per idle/bonus second (0.5 = 1s idle -> 0.5s back).
 BUDGET_RECOVERY_PER_SECOND_RATIO = 0.5
 # Seconds between monitor polls.
@@ -25,10 +30,18 @@ SOCIAL_CONSUME_RATIO = 0.5
 
 # Browser / app detection
 TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
-TRACKED_SITES = ["youtube", "watchseries", "hianime", "twitch", "reddit", "netflix", "9animetv"]
+TRACKED_SITES = ["youtube", "watchseries", "hianime", "twitch", "reddit", "netflix", "9anime", "9animetv"]
 BONUS_SITES = ["kwiziq", "leetcode", "github"]
 BONUS_APPS = ["cursor", "vscode", "terminal", "command prompt"]
 SOCIAL_APPS_OR_SITES = ["whatsapp", "discord"]
+
+
+def get_effective_max_extra_minutes_per_day(day=None):
+    """Return the max extra minutes allowed today. On EXTRA_TIME_BONUS_DAYS (Tue, Thu, Sat, Sun) it's doubled."""
+    d = day if day is not None else date.today()
+    if d.weekday() in EXTRA_TIME_BONUS_DAYS:
+        return int(MAX_EXTRA_MINUTES_PER_DAY * EXTRA_TIME_BONUS_DAY_MULTIPLIER)
+    return MAX_EXTRA_MINUTES_PER_DAY
 
 
 # --- Testing values ---

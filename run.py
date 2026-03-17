@@ -13,7 +13,7 @@ import winerror
 from hotturkey.config import (
     POLL_INTERVAL,
     MAX_PLAY_BUDGET,
-    MAX_EXTRA_MINUTES_PER_DAY,
+    get_effective_max_extra_minutes_per_day,
     STATE_DIR,
 )
 from hotturkey.state import (
@@ -59,7 +59,7 @@ def _log_start_snapshot(state, *, event: str = "start") -> None:
         event=event,
         budget=f"{remaining_time}/{max_time}",
         overtime=overtime_used,
-        extra_time_used=f"{int(extra_time_used)}/{MAX_EXTRA_MINUTES_PER_DAY}",
+        extra_time_used=f"{int(extra_time_used)}/{get_effective_max_extra_minutes_per_day()}",
     )
 
 

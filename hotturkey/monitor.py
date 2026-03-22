@@ -20,6 +20,7 @@ from hotturkey.config import (
     get_effective_max_extra_minutes_per_day,
     BUDGET_RECOVERY_PER_SECOND_RATIO,
     POLL_INTERVAL,
+    BUDGET_ELAPSED_GAP_CLAMP_THRESHOLD_SECONDS,
     BONUS_SITES,
     BONUS_RECOVERY_MULTIPLIER,
     BONUS_APPS,
@@ -207,15 +208,23 @@ def detect_steam_game_focused(foreground_pid):
 
 
 def detect_tracked_site_focused(foreground_title):
-    """Check if the focused window is a tracked site (e.g. YouTube) in a tracked browser.
-    Looks for both a site name and a browser name in the window title.
-    Returns a label like 'YouTube (Brave)' or empty string if no match."""
+    """Check if the focused window is a tracked site (e.g. YouTube).
+
+    HotTurkey matches sites by *substrings in the window title*.
+    We intentionally do NOT require the browser name (Chrome/Brave/etc) to also
+    be present in the title, because many browsers do not include it.
+
+    Returns a label like 'Netflix' or 'Netflix (Edge)' or empty string.
+    """
     title_lower = foreground_title.lower()
     for site in TRACKED_SITES:
         if site in title_lower:
-            for browser in TRACKED_BROWSERS:
-                if browser in title_lower:
-                    return f"{site.title()} ({browser.title()})"
+            browser = next(
+                (b for b in TRACKED_BROWSERS if b in title_lower), None
+            )
+            if browser:
+                return f"{site.title()} ({browser.title()})"
+            return f"{site.title()}"
     return ""
 
 
@@ -393,6 +402,24 @@ def _start_session(state, source_name: str, mode: str, now: float) -> None:
     state.current_session_start_timestamp = now
     state.seconds_used_this_session = 0.0
     state.current_session_mode = mode
+
+
+def clamp_elapsed_for_budget(elapsed_seconds: float) -> float:
+    """Cap wall-clock gaps so sleep/suspend does not become one giant idle tick.
+
+    While AFK, recovery is skipped each poll — but if no polls run, the next tick's
+    elapsed spans the whole gap; waking clears AFK, so idle recovery would apply
+    the entire duration. Treat oversized gaps as a single missed poll.
+    """
+    if elapsed_seconds <= 0 or POLL_INTERVAL <= 0:
+        return elapsed_seconds
+    threshold = max(
+        float(BUDGET_ELAPSED_GAP_CLAMP_THRESHOLD_SECONDS),
+        3.0 * float(POLL_INTERVAL),
+    )
+    if elapsed_seconds > threshold:
+        return float(POLL_INTERVAL)
+    return elapsed_seconds
 
 
 def consume_budget(state, elapsed_seconds):
@@ -636,6 +663,8 @@ def update_budget(state):
         elapsed_seconds = round(elapsed_seconds / POLL_INTERVAL) * POLL_INTERVAL
         if elapsed_seconds < 0:
             elapsed_seconds = 0.0
+
+    elapsed_seconds = clamp_elapsed_for_budget(elapsed_seconds)
 
     state.last_poll_timestamp = now
 

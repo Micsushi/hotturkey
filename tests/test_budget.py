@@ -44,6 +44,7 @@ state_mod.SET_FILE = os.path.join(_tmp, "set.json")
 state_mod.RELOAD_STATE_FLAG = os.path.join(_tmp, ".reload_state")
 
 from hotturkey.monitor import (
+    clamp_elapsed_for_budget,
     consume_budget,
     recover_budget,
     apply_pending_set_time,
@@ -70,6 +71,18 @@ def _fresh_state(**overrides) -> AppState:
 
 
 # ---------- format_duration ----------
+
+
+def test_clamp_elapsed_for_budget_normal_tick_unchanged():
+    pi = float(config.POLL_INTERVAL)
+    assert clamp_elapsed_for_budget(pi) == pi
+    assert clamp_elapsed_for_budget(60.0) == 60.0
+
+
+def test_clamp_elapsed_for_budget_clamps_long_gap_to_one_poll():
+    """Sleep/suspend gaps must not become one huge idle recovery tick."""
+    pi = float(config.POLL_INTERVAL)
+    assert clamp_elapsed_for_budget(3600.0) == pi
 
 
 def test_format_duration():

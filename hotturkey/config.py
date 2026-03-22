@@ -15,6 +15,10 @@ EXTRA_TIME_BONUS_DAY_MULTIPLIER = 2.0
 BUDGET_RECOVERY_PER_SECOND_RATIO = 0.5
 # Seconds between monitor polls.
 POLL_INTERVAL = 10
+# If the process did not run for longer than this (sleep, suspend, hang), only one
+# POLL_INTERVAL of wall time is applied to budget consume/recovery on the next tick.
+# Prevents a huge credit after AFK + resume when polls were not running.
+BUDGET_ELAPSED_GAP_CLAMP_THRESHOLD_SECONDS = 90.0
 # Seconds of no input before we treat the user as AFK.
 AFK_IDLE_THRESHOLD = 300
 # Each overtime popup level comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...).
@@ -30,7 +34,19 @@ SOCIAL_CONSUME_RATIO = 0.5
 
 # Browser / app detection
 TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
-TRACKED_SITES = ["youtube", "watchseries", "hianime", "twitch", "reddit", "netflix", "9anime", "9animetv"]
+TRACKED_SITES = [
+    "youtube",
+    "watchseries",
+    "hianime",
+    "twitch",
+    "reddit",
+    "netflix",
+    "9anime",
+    "9animetv",
+    # Some watch sites (e.g. watchseries.mn) don't include the brand/domain
+    # in the browser tab title, but do include "HD free".
+    "hd free",
+]
 BONUS_SITES = ["kwiziq", "leetcode", "github"]
 BONUS_APPS = ["cursor", "vscode", "terminal", "command prompt"]
 SOCIAL_APPS_OR_SITES = ["whatsapp", "discord"]

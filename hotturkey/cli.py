@@ -7,7 +7,6 @@ import win32event
 
 from hotturkey.config import (
     MAX_PLAY_BUDGET,
-    MAX_EXTRA_MINUTES_PER_DAY,
     get_effective_max_extra_minutes_per_day,
     STATE_DIR,
     LOG_LEVEL_FILE,
@@ -66,9 +65,7 @@ def handle_extra(minutes):
             sys.exit(1)
         if minutes > remaining_cap:
             minutes = remaining_cap
-            print(
-                f"  Capped to {minutes:.0f} min (daily limit {extra_cap} min)."
-            )
+            print(f"  Capped to {minutes:.0f} min (daily limit {extra_cap} min).")
 
     state = load_state()
     pending_minutes = load_extra_minutes_pending()
@@ -128,9 +125,7 @@ def handle_reset():
     print()
     print("  State reset to default.")
     extra_cap = get_effective_max_extra_minutes_per_day()
-    print(
-        f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{extra_cap}."
-    )
+    print(f"  Budget: {total} (full). Overtime: 0:00. Extra today: 0/{extra_cap}.")
     print("  Pending extra and set commands cleared.")
     print("  (Takes effect on next poll if app is running.)")
     print()

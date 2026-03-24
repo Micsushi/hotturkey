@@ -288,7 +288,9 @@ def gather_status_fields(state):
 
     Used by both the CLI and the tray popup so the data logic lives in one place.
     """
-    from hotturkey.utils import format_duration  # local import to avoid circular dependency
+    from hotturkey.utils import (
+        format_duration,
+    )  # local import to avoid circular dependency
 
     pending_minutes = load_extra_minutes_pending()
     effective_seconds = max(
@@ -305,7 +307,9 @@ def gather_status_fields(state):
         "extra_today": display_extra_today,
         "overtime_level": getattr(state, "overtime_escalation_level", 0),
         "gaming_today": format_duration(getattr(state, "gaming_seconds_today", 0.0)),
-        "watching_today": format_duration(getattr(state, "watching_seconds_today", 0.0)),
+        "watching_today": format_duration(
+            getattr(state, "watching_seconds_today", 0.0)
+        ),
         "bonus_today": format_duration(getattr(state, "bonus_seconds_today", 0.0)),
         "social_today": format_duration(getattr(state, "social_seconds_today", 0.0)),
         "other_today": format_duration(getattr(state, "other_apps_seconds_today", 0.0)),

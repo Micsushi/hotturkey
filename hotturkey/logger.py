@@ -51,8 +51,6 @@ class ColorFormatter(logging.Formatter):
 
 
 class FlushingFileHandler(logging.FileHandler):
-    """File handler that flushes after each write so 'Show logs' tail sees new lines immediately."""
-
     def emit(self, record):
         super().emit(record)
         self.flush()
@@ -62,11 +60,6 @@ _current_level_name = "INFO"
 
 
 def _load_log_level_name() -> str:
-    """Return the logging level *name* to use, based on LOG_LEVEL_FILE if present.
-
-    Defaults to 'INFO' for normal, concise logs. Accepts standard level names
-    like DEBUG, INFO, WARNING, ERROR (case-insensitive).
-    """
     level_name = "INFO"
     try:
         if os.path.exists(LOG_LEVEL_FILE):
@@ -75,44 +68,31 @@ def _load_log_level_name() -> str:
             if raw:
                 level_name = raw.upper()
     except OSError:
-        # Fall back to default on any read error.
         pass
-
     return level_name
-
-
-def _load_log_level() -> int:
-    """Return the numeric logging level to use based on LOG_LEVEL_FILE."""
-    level_name = _load_log_level_name()
-    return getattr(logging, level_name, logging.INFO)
 
 
 def setup_logger():
     """Create a logger with two outputs:
-    1. Console with colors (when run from terminal)
-    2. Plain text file at ~/.hotturkey/hotturkey.log (always, flushed so tail works)"""
+    1. Terminal
+    2. At ~/.hotturkey/hotturkey.log (flushed so tail works)"""
     os.makedirs(STATE_DIR, exist_ok=True)
 
     global _current_level_name
 
     logger = logging.getLogger("hotturkey")
-    # Log level is user-tunable via LOG_LEVEL_FILE so the CLI can flip between
-    # INFO (normal) and DEBUG (perf troubleshooting) without code changes.
+
     _current_level_name = _load_log_level_name()
     logger.setLevel(getattr(logging, _current_level_name, logging.INFO))
 
     base_format = "%(asctime)s  %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
 
-    # Console only when we have one (not when running detached in background)
     if os.environ.get("HOTTURKEY_DETACHED") != "1":
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(ColorFormatter(base_format, datefmt=datefmt))
         logger.addHandler(console_handler)
 
-    # File with colors so Show logs (PowerShell tail) displays them.
-    # In CI, use a workspace-local log file so tests don't write to the
-    # runner's real home directory. GitHub Actions sets CI=true.
     log_file_path = LOG_FILE
     if os.environ.get("CI") == "true":
         ci_log_dir = os.path.join(os.getcwd(), ".hotturkey-ci")
@@ -120,7 +100,6 @@ def setup_logger():
             os.makedirs(ci_log_dir, exist_ok=True)
             log_file_path = os.path.join(ci_log_dir, "hotturkey.log")
         except OSError:
-            # If we can't create a CI log dir, fall back to the default path.
             log_file_path = LOG_FILE
 
     try:
@@ -128,7 +107,6 @@ def setup_logger():
         file_handler.setFormatter(ColorFormatter(base_format, datefmt=datefmt))
         logger.addHandler(file_handler)
     except OSError:
-        # Fall back to console-only logging if the log file cannot be opened.
         pass
 
     return logger
@@ -139,11 +117,6 @@ log = setup_logger()
 
 
 def refresh_log_level_from_disk():
-    """Reload log level from LOG_LEVEL_FILE if it changed.
-
-    Called periodically by the running app so commands like `hotturkey morelog`
-    take effect without restarting the background process.
-    """
     global _current_level_name
 
     new_name = _load_log_level_name()
@@ -158,8 +131,6 @@ def refresh_log_level_from_disk():
 
 
 def log_event(tag, message=None, **kwargs):
-    """Log a single line. If message is set, logs [TAG] message (human-readable).
-    Otherwise logs [TAG] key=value key=value for parseable output."""
     if message is not None:
         log.info(f"[{tag}] {message}")
     else:

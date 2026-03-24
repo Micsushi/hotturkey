@@ -219,9 +219,7 @@ def detect_tracked_site_focused(foreground_title):
     title_lower = foreground_title.lower()
     for site in TRACKED_SITES:
         if site in title_lower:
-            browser = next(
-                (b for b in TRACKED_BROWSERS if b in title_lower), None
-            )
+            browser = next((b for b in TRACKED_BROWSERS if b in title_lower), None)
             if browser:
                 return f"{site.title()} ({browser.title()})"
             return f"{site.title()}"

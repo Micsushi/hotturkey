@@ -99,5 +99,3 @@ STEAM_HELPER_PROCESS_NAMES = {
     "vrserver.exe",
     "vrcompositor.exe",
 }
-
-

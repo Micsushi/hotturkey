@@ -1,7 +1,3 @@
-# tray.py -- The system tray icon that sits near your clock.
-# Shows a colored circle (green/yellow/orange/red) based on remaining budget.
-# Hover to see time left. Right-click for Status, Show logs, or Quit.
-
 import subprocess
 
 import pystray
@@ -19,7 +15,6 @@ from hotturkey.state import (
 )
 from hotturkey.utils import format_duration
 
-# Module-level references so update_tray_icon can reach the icon and state
 _icon = None
 _state_ref = None
 _quit_callback = None
@@ -27,8 +22,7 @@ _quit_callback = None
 
 def _build_icon_image(budget_seconds):
     """Draw a 64x64 colored circle.
-    Color depends on the *percentage* of budget left so it behaves consistently
-    even when MAX_PLAY_BUDGET is changed for testing:
+    Color depends on the *percentage* of budget left:
       - white  : 100% (or more) remaining
       - green  : 50–100% remaining
       - yellow : 25–50% remaining
@@ -48,7 +42,7 @@ def _build_icon_image(budget_seconds):
     elif ratio < 1.0:
         color = "#22C55E"  # green
     else:
-        color = "#FFFFFF"  # white (full budget)
+        color = "#FFFFFF"  # white
 
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -57,7 +51,6 @@ def _build_icon_image(budget_seconds):
 
 
 def _on_status(icon, item):  # pylint: disable=unused-argument
-    """Right-click menu handler: opens a small terminal showing current budget info."""
     if _state_ref is None:
         return
     s = gather_status_fields(_state_ref)
@@ -82,7 +75,6 @@ def _on_status(icon, item):  # pylint: disable=unused-argument
 
 
 def _on_show_logs(icon, item):  # pylint: disable=unused-argument
-    """Right-click menu handler: opens a terminal that tails the log file in real time."""
     log_path = LOG_FILE.replace("'", "''")
     subprocess.Popen(
         [
@@ -96,7 +88,6 @@ def _on_show_logs(icon, item):  # pylint: disable=unused-argument
 
 
 def _on_quit(icon, item):  # pylint: disable=unused-argument
-    """Right-click menu handler: shuts down the app."""
     log.info("[COMMAND] quit: user quit from tray.")
     if _quit_callback:
         _quit_callback()
@@ -104,8 +95,6 @@ def _on_quit(icon, item):  # pylint: disable=unused-argument
 
 
 def create_tray_icon(quit_callback=None):
-    """Build the tray icon with a right-click menu. Returns the icon object.
-    quit_callback is called when the user clicks Quit, so run.py can stop its loop."""
     global _icon, _quit_callback
     _quit_callback = quit_callback
     image = _build_icon_image(MAX_PLAY_BUDGET)
@@ -119,7 +108,6 @@ def create_tray_icon(quit_callback=None):
 
 
 def update_tray_icon(state):
-    """Called every poll cycle to refresh the icon color and hover tooltip."""
     global _state_ref
     _state_ref = state
     if _icon is None:

@@ -1,6 +1,5 @@
 # runner.py -- Launches the HotTurkey background process.
 # Called by cli.py when the user runs "hotturkey run".
-# The actual monitor loop and tray logic live in run.py (project root).
 
 import os
 import subprocess
@@ -8,11 +7,6 @@ import sys
 
 
 def launch():
-    """Spawn the HotTurkey background process via run.py and exit.
-
-    Sets HOTTURKEY_DETACHED=1 so the spawned process knows it's running in
-    the background. The actual monitor loop and tray are handled by run.py.
-    """
     if os.environ.get("HOTTURKEY_DETACHED") == "1":
         return
 

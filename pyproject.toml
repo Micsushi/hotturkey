@@ -29,6 +29,9 @@ hotturkey-ci = "hotturkey.devtools:ci"
 where = ["."]
 include = ["hotturkey*"]
 
+[tool.setuptools.package-data]
+hotturkey = ["ascii_art/*.txt", "popup_messages/*.txt"]
+
 [tool.pylint.main]
 load-plugins = []
 ignore-patterns = ["test_.*\\.py"]

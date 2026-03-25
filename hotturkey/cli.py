@@ -173,6 +173,31 @@ def _set_log_level(level_name: str):
         f.write(level_name.upper())
 
 
+def handle_testpopup():
+    """Fire a single test popup with random art + random message using fake overtime state."""
+    import random
+    from hotturkey.state import AppState
+    from hotturkey.popup import show_fullscreen_popup, _build_popup_top_text
+
+    state = AppState()
+    state.remaining_budget_seconds = 0.0
+    state.overtime_seconds = float(random.randint(60, 3600))
+    state.seconds_used_this_session = float(random.randint(300, 7200))
+    state.current_session_mode = "consume"
+    state.is_tracked_activity_running = True
+
+    level = random.randint(1, 5)
+    top_text = _build_popup_top_text(state, level)
+    used = format_duration(state.seconds_used_this_session)
+    top_text = f"{top_text}\n\nSession: {used} on this activity"
+
+    print()
+    print("  Firing test popup...")
+    print(f"  Fake state: overtime={format_duration(state.overtime_seconds)}, level=L{level}")
+    print()
+    show_fullscreen_popup(top_text)
+
+
 def handle_morelog():
     _set_log_level("DEBUG")
     print()
@@ -225,6 +250,10 @@ def main():
     subparsers.add_parser("stop", help="Ask the running HotTurkey process to exit")
 
     subparsers.add_parser(
+        "testpopup", help="Fire a single test popup with random art and message"
+    )
+
+    subparsers.add_parser(
         "morelog", help="Set log level to DEBUG and restart HotTurkey"
     )
     subparsers.add_parser("lesslog", help="Set log level to INFO and restart HotTurkey")
@@ -244,6 +273,8 @@ def main():
         handle_run()
     elif args.command == "stop":
         handle_stop()
+    elif args.command == "testpopup":
+        handle_testpopup()
     elif args.command == "morelog":
         handle_morelog()
     elif args.command == "lesslog":

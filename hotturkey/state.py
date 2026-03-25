@@ -19,57 +19,28 @@ class AppState:
     """Holds everything the app needs to track between poll cycles and across restarts."""
 
     def __init__(self):
-        # How many seconds of play time are left
         self.remaining_budget_seconds = float(MAX_PLAY_BUDGET)
-
-        # How many seconds have been spent *after* the budget hit 0.
-        # This is tracked separately so we can show "overtime used" and
-        # pay it back before refilling normal budget.
         self.overtime_seconds = 0.0
-
-        # When the last poll cycle ran (used to calculate time between checks)
         self.last_poll_timestamp = time.time()
-
         # Whether a game or tracked site is currently focused
         self.is_tracked_activity_running = False
-
         # What is being tracked right now, e.g. "Steam: game.exe" or "YouTube (Brave)"
         self.tracked_activity_name = ""
-
-        # When the current play/watch session started
         self.current_session_start_timestamp = 0.0
-
-        # Total seconds used in the current session
         self.seconds_used_this_session = 0.0
-
-        # Mode for the current session: 'consume' (gaming/YouTube) or 'bonus'
         self.current_session_mode = ""
-
-        # How many overtime popups have fired (controls the halving interval)
         self.overtime_escalation_level = 0
-
-        # When the next overtime popup should appear (unix timestamp)
         self.overtime_next_popup_timestamp = 0.0
-
-        # Extra minutes added via "hotturkey extra X" CLI, waiting to be picked up
         self.extra_minutes_pending_from_cli = 0.0
-
-        # Totals for how much time was spent today in different modes.
-        # These reset when the date changes.
         self.gaming_seconds_today = 0.0
         self.watching_seconds_today = 0.0
         self.bonus_seconds_today = 0.0
         self.social_seconds_today = 0.0
         self.other_apps_seconds_today = 0.0
         self.session_totals_date = date.today().isoformat()
-
-        # Steam game executables we've learned across runs. This lets the app
-        # remember which exes should always be treated as Steam games, even if
-        # their process tree changes or the launcher is missed once.
         self.known_steam_game_exes = []
 
     def to_dict(self):
-        """Convert this object to a plain dictionary so it can be saved as JSON."""
         return {
             "remaining_budget_seconds": self.remaining_budget_seconds,
             "overtime_seconds": self.overtime_seconds,
@@ -92,8 +63,6 @@ class AppState:
         }
 
     def from_dict(self, data):
-        """Restore this object's fields from a dictionary (loaded from JSON).
-        Uses defaults if any key is missing, so old state files still work."""
         self.remaining_budget_seconds = data.get(
             "remaining_budget_seconds", float(MAX_PLAY_BUDGET)
         )
@@ -115,9 +84,7 @@ class AppState:
         self.extra_minutes_pending_from_cli = data.get(
             "extra_minutes_pending_from_cli", 0.0
         )
-        # Backwards compatibility: older state files may only have consume_seconds_today.
-        consume_fallback = data.get("consume_seconds_today", 0.0)
-        self.gaming_seconds_today = data.get("gaming_seconds_today", consume_fallback)
+        self.gaming_seconds_today = data.get("gaming_seconds_today", 0.0)
         self.watching_seconds_today = data.get("watching_seconds_today", 0.0)
         self.bonus_seconds_today = data.get("bonus_seconds_today", 0.0)
         self.social_seconds_today = data.get("social_seconds_today", 0.0)
@@ -128,8 +95,8 @@ class AppState:
         self.known_steam_game_exes = data.get("known_steam_game_exes", [])
 
 
+# --- state.json ---
 def load_state():
-    """Read saved state from disk. If the file doesn't exist or is broken, return fresh defaults."""
     state = AppState()
     if os.path.exists(STATE_FILE):
         try:
@@ -141,20 +108,15 @@ def load_state():
 
 
 def save_state(state):
-    """Write current state to disk so it survives restarts.
-    Creates the .hotturkey folder if it doesn't exist yet."""
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump(state.to_dict(), f, indent=2)
 
 
+# --- Reset & reload ---
 RELOAD_STATE_FLAG = os.path.join(STATE_DIR, ".reload_state")
 
-
 def reset_state_to_default():
-    """Reset all state to default: full budget, zero overtime, extra today cleared,
-    pending extra/set cleared. Works whether the app is running or not.
-    If the app is running, it will reload state on the next poll."""
     state = AppState()
     state.last_poll_timestamp = time.time()
     save_state(state)
@@ -172,7 +134,6 @@ def reset_state_to_default():
 
 
 def check_and_clear_reload_flag():
-    """If a reload was requested (e.g. after reset), remove the flag and return True."""
     if os.path.exists(RELOAD_STATE_FLAG):
         try:
             os.remove(RELOAD_STATE_FLAG)
@@ -182,13 +143,10 @@ def check_and_clear_reload_flag():
     return False
 
 
-# --- Extra-time helpers for CLI <-> monitor coordination ---
-
+# --- extra.json ---
 EXTRA_FILE = os.path.join(STATE_DIR, "extra.json")
 
-
 def _load_extra_data():
-    """Load full extra.json; return dict with defaults for missing keys."""
     if not os.path.exists(EXTRA_FILE):
         return {
             "extra_minutes_pending_from_cli": 0.0,
@@ -211,29 +169,22 @@ def _load_extra_data():
 
 
 def _save_extra_data(data):
-    """Write full extra.json."""
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(EXTRA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
 
 def load_extra_minutes_pending():
-    """Return minutes of extra time requested via the CLI but not yet applied.
-    Stored separately from state.json so CLI can work whether the app is running or not.
-    """
     return float(_load_extra_data().get("extra_minutes_pending_from_cli", 0.0))
 
 
 def save_extra_minutes_pending(minutes):
-    """Persist pending extra minutes so the running app (or next run) can pick them up."""
     data = _load_extra_data()
     data["extra_minutes_pending_from_cli"] = float(minutes)
     _save_extra_data(data)
 
 
 def load_extra_minutes_given_today():
-    """Return how many extra minutes have been given today (applied by the monitor).
-    Returns 0 if the stored date is not today (e.g. new day)."""
     data = _load_extra_data()
     today_str = date.today().isoformat()
     if data.get("extra_minutes_date") != today_str:
@@ -242,7 +193,6 @@ def load_extra_minutes_given_today():
 
 
 def add_extra_minutes_given_today(minutes):
-    """Record that we applied this many positive extra minutes today. Call from monitor when applying."""
     data = _load_extra_data()
     today_str = date.today().isoformat()
     if data.get("extra_minutes_date") != today_str:
@@ -254,18 +204,10 @@ def add_extra_minutes_given_today(minutes):
     _save_extra_data(data)
 
 
-# --- Set-time helpers for CLI <-> monitor coordination ---
-
+# --- set.json ---
 SET_FILE = os.path.join(STATE_DIR, "set.json")
 
-
 def load_set_minutes():
-    """Return minutes requested via the 'set' CLI (can be positive or negative).
-
-    Positive value means 'set budget to this many minutes remaining and clear overtime'.
-    Negative value means 'set overtime debt to this many minutes (budget 0)'.
-    Zero means 'no pending set command'.
-    """
     if not os.path.exists(SET_FILE):
         return 0.0
     try:
@@ -277,17 +219,14 @@ def load_set_minutes():
 
 
 def save_set_minutes(minutes):
-    """Persist pending set minutes so the running app (or next run) can pick them up."""
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(SET_FILE, "w") as f:
         json.dump({"set_minutes_pending_from_cli": float(minutes)}, f, indent=2)
 
 
+# --- Status (CLI + tray) ---
 def gather_status_fields(state):
-    """Build a dict of all formatted status values from a state object.
 
-    Used by both the CLI and the tray popup so the data logic lives in one place.
-    """
     from hotturkey.utils import (
         format_duration,
     )  # local import to avoid circular dependency
@@ -297,8 +236,7 @@ def gather_status_fields(state):
         0.0, state.remaining_budget_seconds + (pending_minutes * 60)
     )
     extra_given_today = load_extra_minutes_given_today()
-    # For display, include positive pending minutes so CLI/tray show the
-    # effective extra immediately after an `ht extra` command.
+
     display_extra_today = int(extra_given_today + max(0.0, pending_minutes))
     return {
         "remaining": format_duration(effective_seconds),
@@ -316,16 +254,10 @@ def gather_status_fields(state):
     }
 
 
+# --- Budget / overtime helpers ---
 def apply_extra_seconds(
     budget_before: float, overtime_before: float, extra_seconds: float
 ):
-    """Apply extra seconds to budget/overtime and return (budget_after, overtime_after).
-
-    Positive extra:
-      - First clears overtime, then adds any leftover to budget.
-    Negative extra:
-      - First subtracts from budget, then any remainder becomes overtime.
-    """
     budget_after = budget_before
     overtime_after = overtime_before
 
@@ -348,7 +280,6 @@ def apply_extra_seconds(
 
 
 def overtime_level_from_debt(overtime_seconds: float) -> int:
-    """Compute overtime level (1, 2, 3, ...) from current overtime debt."""
     if overtime_seconds <= 0:
         return 0
     base_interval = max(

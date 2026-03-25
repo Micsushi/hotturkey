@@ -28,35 +28,79 @@ A Windows screen-time enforcer: tracks Steam games and browser sites (e.g. YouTu
 
 ## Setup
 
-1. **Python 3.8+** and find its path. In PowerShell you can run:
+**1. Check Python (3.8 or newer)**
 
-   ```powershell
-   where python
-   ```
+```powershell
+python --version
+```
 
-   Then copy the full path you want to use (e.g. `C:\Users\you\AppData\Local\Programs\Python\Python313\python.exe`).
-2. **Clone** the repo and open a terminal in the project folder.
-3. **Install the package** (deps + `hotturkey` command) in the project folder:
-   ```powershell
-   & "C:\Path\To\Your\Python\python.exe" -m pip install -e .
-   ```
-   After this you can use `hotturkey status`, `hotturkey extra 30`, etc. instead of `python -m hotturkey.cli ...`.
+If that fails, try:
+
+```powershell
+py -3 --version
+```
+
+**2. Clone the repo** and open a terminal **inside the project folder**.
+
+**3. Install**
+
+```powershell
+python -m pip install -e .
+```
+
+That installs HotTurkey’s libraries and adds **`ht`** and **`hotturkey`** (same program) plus dev helpers like **`ht-test`** / **`hotturkey-test`** into your Python **Scripts** folder.
+
+**4. Use `ht` or `hotturkey` from any folder (optional)**
+
+Windows only finds those commands if the **`Scripts`** folder is on your **Path**.
+
+1. Open **Settings** → **System** → **About** → **Advanced system settings**.
+2. Click **Environment Variables**.
+3. Under your user name, select **Path** → **Edit** → **New**.
+4. Paste the path to your **Scripts** folder, for example
+   `C:\Users\YourName\AppData\Local\Programs\Python\Python313\Scripts`
+   In PowerShell you can see where `pip` lives (that folder is **Scripts**):
+
+```powershell
+(Get-Command pip).Source
+```
+
+5. Save, then **open a new terminal**. Now `ht run`, `hotturkey status`, etc. work from any directory.
+
+If you do **not** add **Scripts** to Path, you can still run the same commands like this:
+
+```powershell
+python -m hotturkey.cli run
+python -m hotturkey.cli status
+```
+
+**If `python` is not on Path when you install**
+
+Use the full path to `python.exe`:
+
+```powershell
+& "C:\Path\To\python.exe" -m pip install -e .
+```
 
 ## Running
 
-You can start HotTurkey either via Python or the installed CLI:
+Start HotTurkey in either of these ways:
 
 ```text
 python run.py
 ```
 
-or, after the setup command above you can just run this in any terminal that is in that python env and your python scripts folder is in your path:
-
 ```text
 ht run
 ```
 
-Both commands start a **background process** and exit; you can close the terminal. HotTurkey keeps running.
+```text
+hotturkey run
+```
+
+`ht run` and `hotturkey run` do the same thing; both need **Scripts** on Path (Setup step 4). Otherwise use `python run.py` or `python -m hotturkey.cli run`.
+
+Both start HotTurkey in the **background** and then the terminal can close; the app keeps running.
 
 - **Tray icon** (near the clock): green → yellow → orange → red as budget drops. Hover for remaining time and current activity.
 - **Logs** : `%USERPROFILE%\.hotturkey\hotturkey.log`. Right-click tray → **Show logs** to tail it.
@@ -69,7 +113,7 @@ Both commands start a **background process** and exit; you can close the termina
 
 ## CLI
 
-In a **separate** terminal (after `pip install -e .`):
+In another terminal, after install. If **Scripts** is on Path, use the commands in the table. You can type **`hotturkey` instead of `ht`** for every command (for example `hotturkey status` and `ht status` are the same). If **Scripts** is not on Path, use `python -m hotturkey.cli` plus the same subcommand (example: `python -m hotturkey.cli status`).
 
 | Command | Effect |
 |--------|--------|
@@ -83,7 +127,7 @@ In a **separate** terminal (after `pip install -e .`):
 | `ht morelog` | Switch log level to DEBUG (verbose, includes `[PERF]` timing) for the running app and future runs. |
 | `ht lesslog` | Switch log level back to INFO (normal, concise logs) for the running app and future runs. |
 
-Changes are applied on the next poll when the app is running. 
+Changes are applied on the next poll when the app is running.
 
 ## Auto-start with Windows start
 
@@ -95,29 +139,23 @@ Changes are applied on the next poll when the app is running.
 
 ## Dev commands (tests & lint)
 
-After `pip install -e .` you get a few helper commands:
+After `pip install -e .` you get helper commands. Each has a short name and a `hotturkey-*` alias (`ht-test` / `hotturkey-test`, and so on).
 
-- **Run tests**
+- **Run tests** — `ht-test` or `hotturkey-test` (same as `python -m pytest -v`).
 
   ```powershell
   ht-test
   ```
 
-  (Equivalent to `python -m pytest -v`.)
-
-- **Run lint**
+- **Run lint** — `ht-lint` or `hotturkey-lint`.
 
   ```powershell
   ht-lint
   ```
 
-  (Equivalent to `python -m pylint hotturkey/ --rcfile=pyproject.toml`.)
-
-- **Run both (CI-style)**
+- **Run both (CI-style)** — `ht-ci` or `hotturkey-ci` (lint then tests, like the GitHub Action).
 
   ```powershell
   ht-ci
   ```
-
-  which runs lint then tests, matching what the GitHub Action does.
 

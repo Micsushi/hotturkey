@@ -17,9 +17,13 @@ dependencies = [
 
 [project.scripts]
 ht = "hotturkey.cli:main"
+hotturkey = "hotturkey.cli:main"
 ht-lint = "hotturkey.devtools:lint"
+hotturkey-lint = "hotturkey.devtools:lint"
 ht-test = "hotturkey.devtools:test"
+hotturkey-test = "hotturkey.devtools:test"
 ht-ci = "hotturkey.devtools:ci"
+hotturkey-ci = "hotturkey.devtools:ci"
 
 [tool.setuptools.packages.find]
 where = ["."]

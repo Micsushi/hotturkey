@@ -116,6 +116,7 @@ def save_state(state):
 # --- Reset & reload ---
 RELOAD_STATE_FLAG = os.path.join(STATE_DIR, ".reload_state")
 
+
 def reset_state_to_default():
     state = AppState()
     state.last_poll_timestamp = time.time()
@@ -145,6 +146,7 @@ def check_and_clear_reload_flag():
 
 # --- extra.json ---
 EXTRA_FILE = os.path.join(STATE_DIR, "extra.json")
+
 
 def _load_extra_data():
     if not os.path.exists(EXTRA_FILE):
@@ -206,6 +208,7 @@ def add_extra_minutes_given_today(minutes):
 
 # --- set.json ---
 SET_FILE = os.path.join(STATE_DIR, "set.json")
+
 
 def load_set_minutes():
     if not os.path.exists(SET_FILE):

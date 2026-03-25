@@ -1,6 +1,5 @@
 # monitor.py -- The brain of the app.
-# Detects if a Steam game or tracked site is focused, then consumes or recovers budget.
-# Called every 5 seconds by the monitor loop in run.py.
+# Detects what is focused, then consumes or recovers budget accordingly
 
 import psutil
 import win32gui

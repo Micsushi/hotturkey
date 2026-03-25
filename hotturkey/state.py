@@ -282,13 +282,39 @@ def apply_extra_seconds(
     return budget_after, overtime_after
 
 
-def overtime_level_from_debt(overtime_seconds: float) -> int:
-    if overtime_seconds <= 0:
-        return 0
-    base_interval = max(
+def overtime_base_interval_seconds() -> float:
+    return max(
         float(OVERTIME_MIN_INTERVAL_SECONDS),
         0.5 * float(MAX_PLAY_BUDGET),
     )
+
+
+def overtime_threshold_for_level(target_level: int):
+    if target_level <= 0:
+        return 0.0
+    if target_level == 1:
+        return 0.0
+
+    base_interval = overtime_base_interval_seconds()
+
+    cumulative = base_interval
+    if target_level == 2:
+        return cumulative
+
+    interval = base_interval * float(OVERTIME_INTERVAL_DECAY_FACTOR)
+    for _lvl in range(3, target_level + 1):
+        if interval < 1.0:
+            return None
+        cumulative += interval
+        interval *= float(OVERTIME_INTERVAL_DECAY_FACTOR)
+
+    return cumulative
+
+
+def overtime_level_from_debt(overtime_seconds: float) -> int:
+    if overtime_seconds <= 0:
+        return 0
+    base_interval = overtime_base_interval_seconds()
     level = 1
     remaining_for_higher = max(0.0, overtime_seconds - base_interval)
     if remaining_for_higher > 0:

@@ -8,13 +8,14 @@ from pathlib import Path
 
 from hotturkey.config import (
     MAX_PLAY_BUDGET,
-    OVERTIME_INTERVAL_DECAY_FACTOR,
-    OVERTIME_MIN_INTERVAL_SECONDS,
     SOCIAL_CONSUME_RATIO,
 )
 from hotturkey.logger import log
 from hotturkey.utils import format_duration
-from hotturkey.state import overtime_level_from_debt
+from hotturkey.state import (
+    overtime_level_from_debt,
+    overtime_threshold_for_level,
+)
 
 
 def _ascii_art_dir():
@@ -22,12 +23,10 @@ def _ascii_art_dir():
 
 
 def _popup_message_pool_dir():
-    # Keep popup text messages separate from ASCII art.
     return Path(__file__).resolve().parent / "popup_messages"
 
 
 def _pick_random_popup_extra_message():
-    """Return one random line from popup_messages/popup_messages.txt."""
     pool_path = _popup_message_pool_dir() / "popup_messages.txt"
     if not pool_path.is_file():
         return None
@@ -42,44 +41,6 @@ def _pick_random_popup_extra_message():
     if not messages:
         return None
     return random.choice(messages)
-
-
-def _overtime_base_interval_seconds() -> float:
-    # Mirrors `overtime_level_from_debt()` logic (base interval for L2+ spacing).
-    return max(
-        float(OVERTIME_MIN_INTERVAL_SECONDS),
-        0.5 * float(MAX_PLAY_BUDGET),
-    )
-
-
-def _overtime_threshold_for_level(target_level: int):
-    """Return the overtime seconds needed to reach `target_level`.
-
-    Must mirror `overtime_level_from_debt()` in state.py exactly.
-    Returns None if the level is unreachable (intervals shrink below 1s).
-    """
-    if target_level <= 0:
-        return 0.0
-    if target_level == 1:
-        return 0.0
-
-    base_interval = _overtime_base_interval_seconds()
-
-    # L2 fires when overtime strictly exceeds base_interval (> not >=).
-    # L3+ fire when remaining >= interval (>=).
-    # We return the boundary value; the caller treats it as "just past this".
-    cumulative = base_interval
-    if target_level == 2:
-        return cumulative
-
-    interval = base_interval * float(OVERTIME_INTERVAL_DECAY_FACTOR)
-    for _lvl in range(3, target_level + 1):
-        if interval < 1.0:
-            return None
-        cumulative += interval
-        interval *= float(OVERTIME_INTERVAL_DECAY_FACTOR)
-
-    return cumulative
 
 
 def _pick_random_ascii_art():
@@ -100,8 +61,6 @@ def _pick_random_ascii_art():
 
 
 def _show_fullscreen_popup_simple(message):
-    # Simple console layout: red background, white text, big-ish window, message, then pause.
-    # Keep this "simple" fallback safe for cmd parsing: first line only.
     first = (message or "").splitlines()[0] if message else ""
     safe = (
         first[:300]
@@ -118,13 +77,11 @@ def _show_fullscreen_popup_simple(message):
 
 
 def _has_windows_terminal() -> bool:
-    """Return True if Windows Terminal (wt.exe) is on PATH."""
     import shutil
     return shutil.which("wt") is not None
 
 
 def _show_fullscreen_popup_with_body(body):
-    """Red console; prints multi-line body from a temp file."""
     txt_path = None
     bat_path = None
     ps1_path = None
@@ -142,8 +99,6 @@ def _show_fullscreen_popup_with_body(body):
         txt_win = str(Path(txt_path).resolve())
 
         if _has_windows_terminal():
-            # Windows Terminal renders all Unicode (Braille, emoji) correctly.
-            # Use a PowerShell script so we get red background + white text.
             ps_lines = [
                 "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
                 "$Host.UI.RawUI.BackgroundColor = 'DarkRed'",
@@ -172,7 +127,6 @@ def _show_fullscreen_popup_with_body(body):
                 "powershell", "-ExecutionPolicy", "Bypass", "-File", ps1_win,
             ])
         else:
-            # Fallback: classic cmd.exe (Braille/emoji may show as ?? depending on font).
             bat_lines = [
                 "@echo off",
                 "chcp 65001 >nul",
@@ -208,8 +162,6 @@ def _show_fullscreen_popup_with_body(body):
 
 
 def _fit_body_to_console(body, *, max_cols: int, max_lines: int) -> str:
-    """Truncate wide/tall ASCII so it fits the fixed terminal size."""
-    # `cmd`'s `mode con cols=... lines=...` is best-effort; still, keep output bounded.
     lines = body.splitlines()
     max_lines = max(1, max_lines)
     max_cols = max(1, max_cols)
@@ -225,7 +177,6 @@ def _fit_body_to_console(body, *, max_cols: int, max_lines: int) -> str:
 
 
 def _build_popup_top_text(state, level: int) -> str:
-    """Header text printed above the ASCII art."""
     extra_message = _pick_random_popup_extra_message() or "Overtime detected."
 
     overtime_seconds = float(getattr(state, "overtime_seconds", 0.0))
@@ -235,7 +186,7 @@ def _build_popup_top_text(state, level: int) -> str:
     total_to_recover = max(0.0, overtime_seconds) + max(0.0, float(MAX_PLAY_BUDGET) - remaining_budget_seconds)
 
     next_level = level + 1
-    threshold_next = _overtime_threshold_for_level(next_level)
+    threshold_next = overtime_threshold_for_level(next_level)
     growth_per_sec = float(SOCIAL_CONSUME_RATIO) if mode == "social" else 1.0
     if threshold_next is None:
         next_line = "Next level: max reached"
@@ -289,7 +240,6 @@ def check_and_trigger_popups(state):
 
     is_active = state.is_tracked_activity_running
 
-    # Popups based on how much *overtime* we've accumulated, only start counting once budget is at/below 0.
     if state.remaining_budget_seconds > 0:
         state.overtime_escalation_level = 0
         return
@@ -306,10 +256,8 @@ def check_and_trigger_popups(state):
     if not is_active:
         return
 
-    # When we cross into a new level during an active session, fire a popup.
     if level > prev_level:
         top_text = _build_popup_top_text(state, level)
-        # Keep the existing "close to what triggered this" flavor by appending session time.
         used = format_duration(float(getattr(state, "seconds_used_this_session", 0.0)))
         top_text = f"{top_text}\n\nSession: {used} on this activity"
         show_fullscreen_popup(top_text)

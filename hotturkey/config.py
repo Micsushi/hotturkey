@@ -6,7 +6,7 @@ from datetime import date
 # Total daily play budget in seconds (default: 1 hour).
 MAX_PLAY_BUDGET = 3600
 # Max extra minutes that can be granted via CLI per day.
-MAX_EXTRA_MINUTES_PER_DAY = 120
+MAX_EXTRA_MINUTES_PER_DAY = 60
 # Days of the week that get bonus extra-time cap (double). Monday=0, Sunday=6.
 # Tue, Thu, Sat, Sun get double the daily extra cap.
 EXTRA_TIME_BONUS_DAYS = (1, 3, 5, 6)
@@ -18,7 +18,7 @@ POLL_INTERVAL = 10
 # If the process did not run for longer than this (sleep, suspend, hang), only one
 # POLL_INTERVAL of wall time is applied to budget consume/recovery on the next tick.
 # Prevents a huge credit after AFK + resume when polls were not running.
-BUDGET_ELAPSED_GAP_CLAMP_THRESHOLD_SECONDS = 90.0
+BUDGET_ELAPSED_GAP_CLAMP_THRESHOLD_SECONDS = 60.0
 # Seconds of no input before we treat the user as AFK.
 AFK_IDLE_THRESHOLD = 300
 # Each overtime popup level comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...).
@@ -26,9 +26,9 @@ OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
 # Minimum interval between overtime popups in seconds (never faster than this).
 OVERTIME_MIN_INTERVAL_SECONDS = 60
 # How much faster budget recovers on bonus sites vs normal idle (3x here).
-BONUS_RECOVERY_MULTIPLIER = 3.0
+BONUS_RECOVERY_MULTIPLIER = 2.0
 # Good desktop apps that earn bonus time (e.g. coding, study tools) recover more slowly.
-BONUS_APPS_RECOVERY_MULTIPLIER = 2.0
+BONUS_APPS_RECOVERY_MULTIPLIER = 1.5
 # Social media consumes budget more slowly than games/videos (0.5 = half speed).
 SOCIAL_CONSUME_RATIO = 0.5
 

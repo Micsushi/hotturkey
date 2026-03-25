@@ -193,7 +193,9 @@ def handle_testpopup():
 
     print()
     print("  Firing test popup...")
-    print(f"  Fake state: overtime={format_duration(state.overtime_seconds)}, level=L{level}")
+    print(
+        f"  Fake state: overtime={format_duration(state.overtime_seconds)}, level=L{level}"
+    )
     print()
     show_fullscreen_popup(top_text)
 

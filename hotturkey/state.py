@@ -30,7 +30,6 @@ class AppState:
         self.seconds_used_this_session = 0.0
         self.current_session_mode = ""
         self.overtime_escalation_level = 0
-        self.overtime_next_popup_timestamp = 0.0
         self.extra_minutes_pending_from_cli = 0.0
         self.gaming_seconds_today = 0.0
         self.watching_seconds_today = 0.0
@@ -51,7 +50,6 @@ class AppState:
             "seconds_used_this_session": self.seconds_used_this_session,
             "current_session_mode": self.current_session_mode,
             "overtime_escalation_level": self.overtime_escalation_level,
-            "overtime_next_popup_timestamp": self.overtime_next_popup_timestamp,
             "extra_minutes_pending_from_cli": self.extra_minutes_pending_from_cli,
             "gaming_seconds_today": self.gaming_seconds_today,
             "watching_seconds_today": self.watching_seconds_today,
@@ -78,9 +76,6 @@ class AppState:
         self.seconds_used_this_session = data.get("seconds_used_this_session", 0.0)
         self.current_session_mode = data.get("current_session_mode", "")
         self.overtime_escalation_level = data.get("overtime_escalation_level", 0)
-        self.overtime_next_popup_timestamp = data.get(
-            "overtime_next_popup_timestamp", 0.0
-        )
         self.extra_minutes_pending_from_cli = data.get(
             "extra_minutes_pending_from_cli", 0.0
         )

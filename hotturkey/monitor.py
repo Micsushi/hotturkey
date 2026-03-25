@@ -50,7 +50,7 @@ _STEAM_REFRESH_INTERVAL_SECONDS = 5.0
 _last_steam_refresh_time = 0.0
 
 
-# 
+# --- activity detection ---
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [
         ("cbSize", wintypes.UINT),
@@ -63,10 +63,6 @@ _kernel32 = ctypes.windll.kernel32
 
 
 def get_idle_seconds() -> float:
-    """Return the number of seconds since the last keyboard or mouse input.
-
-    Uses the Windows GetLastInputInfo API.
-    """
     info = LASTINPUTINFO()
     info.cbSize = ctypes.sizeof(LASTINPUTINFO)
     if not _user32.GetLastInputInfo(ctypes.byref(info)):
@@ -76,7 +72,6 @@ def get_idle_seconds() -> float:
 
 
 def get_foreground_window_info():
-    """Get the process ID and title of the window the user is currently looking at."""
     hwnd = win32gui.GetForegroundWindow()
     if not hwnd:
         return 0, ""
@@ -86,9 +81,6 @@ def get_foreground_window_info():
 
 
 def is_steam_ancestor(pid):
-    """Walk up the process tree from a given PID to check if steam.exe is a parent.
-    This catches games launched through intermediate launchers (e.g. publisher launchers
-    like PioneerGame.exe that then launch the actual game)."""
     try:
         proc = psutil.Process(pid)
         for _ in range(10):
@@ -103,16 +95,6 @@ def is_steam_ancestor(pid):
 
 
 def refresh_known_steam_games(state):
-    """Discover new Steam game executables by looking only at Steam's children.
-
-    Instead of walking every process on the system and asking "does this have
-    steam.exe as an ancestor?", we:
-      1) Find steam.exe processes
-      2) Walk their child processes recursively
-      3) Treat any non-helper executables we see as candidate games
-
-    This is equivalent in effect to "polling whenever a new process under Steam
-    appears", but implemented with a lightweight periodic scan."""
     try:
         steam_procs = []
         for proc in psutil.process_iter(["pid", "name"]):
@@ -141,7 +123,6 @@ def refresh_known_steam_games(state):
                     continue
 
                 lname = name.lower()
-                # Skip helpers and ones we already know about.
                 if (
                     lname in STEAM_HELPER_PROCESS_NAMES
                     or lname in _KNOWN_STEAM_GAME_NAMES
@@ -153,14 +134,10 @@ def refresh_known_steam_games(state):
                     state.known_steam_game_exes.append(lname)
                 log_event("GAMING", message=f"learned: {name}")
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
-        # Best-effort only; failures here shouldn't break the main loop.
         pass
 
 
 def detect_steam_game_focused(foreground_pid):
-    """Check if the currently focused window is a Steam game.
-    Works by checking if the focused process has steam.exe as an ancestor,
-    and that it's not one of Steam's own helper processes."""
     if foreground_pid == 0:
         return ""
     try:
@@ -169,19 +146,12 @@ def detect_steam_game_focused(foreground_pid):
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return ""
 
-    # Ignore Steam's own background processes
     if proc_name in STEAM_HELPER_PROCESS_NAMES:
         return ""
 
-    # If we've already confirmed this exe as a Steam game earlier in the
-    # session, keep treating it as a game even if its current process tree
-    # no longer has steam.exe as an ancestor (some launchers/anti-cheat
-    # chains re-parent the actual game process).
     if proc_name in _KNOWN_STEAM_GAME_NAMES:
         return proc.name()
 
-    # First-time detection: walk up the process tree to see if steam.exe is
-    # an ancestor. If so, remember this exe name as a known Steam game.
     if is_steam_ancestor(foreground_pid):
         _KNOWN_STEAM_GAME_NAMES.add(proc_name)
         return proc.name()
@@ -189,15 +159,8 @@ def detect_steam_game_focused(foreground_pid):
     return ""
 
 
+# Should look into something better than this
 def detect_tracked_site_focused(foreground_title):
-    """Check if the focused window is a tracked site (e.g. YouTube).
-
-    HotTurkey matches sites by *substrings in the window title*.
-    We intentionally do NOT require the browser name (Chrome/Brave/etc) to also
-    be present in the title, because many browsers do not include it.
-
-    Returns a label like 'Netflix' or 'Netflix (Edge)' or empty string.
-    """
     title_lower = foreground_title.lower()
     for site in TRACKED_SITES:
         if site in title_lower:
@@ -209,45 +172,30 @@ def detect_tracked_site_focused(foreground_title):
 
 
 def _match_title_keyword(foreground_title, keywords):
-    """Return a nicely formatted label if any keyword appears in the window title."""
     title_lower = foreground_title.lower()
     for name in keywords:
         if name in title_lower:
-            # Capitalize nicely for display (e.g. 'leetcode' -> 'Leetcode').
             return name.replace("-", " ").title()
     return ""
 
 
 def detect_bonus_site_focused(foreground_title):
-    """Check if the focused window is a 'bonus' (productive) site."""
     return _match_title_keyword(foreground_title, BONUS_SITES)
 
 
 def detect_bonus_app_focused(foreground_title):
-    """Check if the focused window looks like a 'good' desktop app that should earn bonus time.
-    Matches by title keyword against BONUS_APPS."""
     if not BONUS_APPS:
         return ""
     return _match_title_keyword(foreground_title, BONUS_APPS)
 
 
 def detect_social_focused(foreground_title):
-    """Check if the focused window looks like a social app/site (e.g. Discord, WhatsApp)."""
     return _match_title_keyword(foreground_title, SOCIAL_APPS_OR_SITES)
 
 
 def detect_tracked_activity():
-    """The main detection function. Checks the focused window against all detectors.
-    Returns (mode, source_name) where mode is one of:
-      - 'consume'   : tracked entertainment (Steam / tracked video sites)
-      - 'social'    : social media apps/sites (Discord, WhatsApp) at reduced rate
-      - 'bonus'     : productive / bonus sites in the browser (fastest recovery)
-      - 'bonus_app' : productive desktop apps (slower 2x recovery)
-      - 'idle'      : nothing relevant focused
-    """
     foreground_pid, foreground_title = get_foreground_window_info()
 
-    # Bonus / productive sites first: we don't want to consume budget here.
     bonus_label = detect_bonus_site_focused(foreground_title)
     if bonus_label:
         return "bonus", bonus_label
@@ -272,33 +220,23 @@ def detect_tracked_activity():
     return "idle", ""
 
 
-# --- Budget logic ---
-
-
+# --- budget ---
 def _format_budget_bar(state, is_recovering: bool) -> str:
-    """Return an ASCII bar representing how much of the budget is used.
-
-    Example: [██████░░░░░░░░] 25% used (repaying budget)
-             [████████████████] 100% used (overtime L2)
-    """
     cap = float(MAX_PLAY_BUDGET) if MAX_PLAY_BUDGET > 0 else 1.0
     remaining_clamped = max(0.0, min(state.remaining_budget_seconds, cap))
     used_ratio = 1.0 - (remaining_clamped / cap)
     used_ratio = max(0.0, min(1.0, used_ratio))
 
-    # Only show 100% when budget is actually fully used (remaining <= 0).
+    # Only show 100% when budget is actually finished
     if state.remaining_budget_seconds > 0 and used_ratio >= 1.0:
         used_ratio = 0.99
 
     used_blocks = int(round(used_ratio * _BUDGET_BAR_WIDTH))
     used_blocks = max(0, min(_BUDGET_BAR_WIDTH, used_blocks))
 
-    # Use plain ASCII characters so logs work on all Windows encodings.
-    # '#' = used time, '-' = remaining time.
     bar = "#" * used_blocks + "-" * (_BUDGET_BAR_WIDTH - used_blocks)
     percent = int(round(used_ratio * 100))
 
-    # Suffix describing state: overtime vs recovering vs full/normal.
     suffix_parts = []
     if state.remaining_budget_seconds <= 0:
         overtime = getattr(state, "overtime_seconds", 0.0)
@@ -315,14 +253,12 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
 
     suffix = ""
     if suffix_parts:
-        # Use pipe separators for all extra state info (overtime level, overtime, etc.).
         suffix = " | " + " | ".join(suffix_parts)
 
     return f"[{bar}] {percent:3d}% used{suffix}"
 
 
 def _maybe_reset_session_totals_for_today(state) -> None:
-    """Ensure per-day session totals are for today's date; reset if the day changed."""
     today_str = date.today().isoformat()
     if getattr(state, "session_totals_date", "") != today_str:
         state.gaming_seconds_today = 0.0
@@ -333,20 +269,17 @@ def _maybe_reset_session_totals_for_today(state) -> None:
         state.session_totals_date = today_str
 
 
-def _add_session_time_to_totals(state, seconds_used: float) -> None:
-    """Accumulate finished session time into today's totals by mode."""
+def _add_session_time_to_daily_totals(state, seconds_used: float) -> None:
     if seconds_used <= 0:
         return
     mode = getattr(state, "current_session_mode", "")
     if mode == "consume":
         label = getattr(state, "tracked_activity_name", "") or ""
         if label.startswith("Steam:"):
-            # Gaming session (Steam)
             state.gaming_seconds_today = getattr(
                 state, "gaming_seconds_today", 0.0
             ) + float(seconds_used)
         else:
-            # Tracked browser / WATCHING session
             state.watching_seconds_today = getattr(
                 state, "watching_seconds_today", 0.0
             ) + float(seconds_used)
@@ -361,11 +294,10 @@ def _add_session_time_to_totals(state, seconds_used: float) -> None:
 
 
 def _end_session(state) -> None:
-    """End the current tracked session: accumulate time into today's totals, log, and clear."""
     if not state.is_tracked_activity_running:
         return
     used_s = int(state.seconds_used_this_session)
-    _add_session_time_to_totals(state, used_s)
+    _add_session_time_to_daily_totals(state, used_s)
     log_event(
         "SESSION",
         message=f"session ended: {state.tracked_activity_name}, {used_s}s used",
@@ -375,7 +307,6 @@ def _end_session(state) -> None:
 
 
 def _start_session(state, source_name: str, mode: str, now: float) -> None:
-    """Start a new tracked session if one isn't already running."""
     if state.is_tracked_activity_running:
         return
     log_event("SESSION", message=f"session started: {source_name}")
@@ -384,13 +315,8 @@ def _start_session(state, source_name: str, mode: str, now: float) -> None:
     state.current_session_mode = mode
 
 
+# If the PC was asleep (or we missed many polls), don't count the gap as one huge step
 def clamp_elapsed_for_budget(elapsed_seconds: float) -> float:
-    """Cap wall-clock gaps so sleep/suspend does not become one giant idle tick.
-
-    While AFK, recovery is skipped each poll — but if no polls run, the next tick's
-    elapsed spans the whole gap; waking clears AFK, so idle recovery would apply
-    the entire duration. Treat oversized gaps as a single missed poll.
-    """
     if elapsed_seconds <= 0 or POLL_INTERVAL <= 0:
         return elapsed_seconds
     threshold = max(
@@ -403,31 +329,22 @@ def clamp_elapsed_for_budget(elapsed_seconds: float) -> float:
 
 
 def consume_budget(state, elapsed_seconds):
-    """Subtract play time from budget.
-
-    When there is remaining budget, we subtract from it until it reaches 0.
-    Any additional time beyond that is tracked separately as overtime_seconds,
-    so we can later show and "pay back" that debt before refilling normal
-    budget.
-    """
     if elapsed_seconds <= 0:
         return
 
     before_budget = state.remaining_budget_seconds
     before_overtime = state.overtime_seconds
 
+    # consume budget before adding overtime debt
     if before_budget > 0:
         new_budget = before_budget - elapsed_seconds
         if new_budget >= 0:
-            # All consumption fits within remaining budget.
             state.remaining_budget_seconds = new_budget
             overtime_added = 0.0
         else:
-            # We used up the remaining budget and the rest is overtime.
             state.remaining_budget_seconds = 0.0
-            overtime_added = -new_budget  # positive seconds over budget
+            overtime_added = -new_budget
     else:
-        # Already at/below zero budget: everything counts as overtime.
         overtime_added = elapsed_seconds
 
     state.overtime_seconds = max(0.0, before_overtime + overtime_added)
@@ -444,16 +361,6 @@ def consume_budget(state, elapsed_seconds):
 
 
 def recover_budget(state, elapsed_seconds):
-    """Add time back to budget while idle or on bonus sites.
-
-    Recovery first pays down any accumulated overtime_seconds (time spent past
-    0 budget). Only once overtime_seconds reaches 0 does additional recovery
-    start refilling remaining_budget_seconds up to MAX_PLAY_BUDGET.
-    Budgets already above the normal cap (from extra time or set commands)
-    are not reduced.
-    """
-    # If budget is already above the normal cap (because of extra time),
-    # don't change it during idle periods.
     if (
         state.remaining_budget_seconds >= MAX_PLAY_BUDGET
         and state.overtime_seconds <= 0
@@ -466,31 +373,20 @@ def recover_budget(state, elapsed_seconds):
     before_budget = state.remaining_budget_seconds
     before_overtime = state.overtime_seconds
 
-    # Step 1: pay down overtime debt.
+    # pay overtime first.
     debt_paid = 0.0
     if before_overtime > 0 and recovered > 0:
         debt_paid = min(before_overtime, recovered)
         state.overtime_seconds = before_overtime - debt_paid
         recovered -= debt_paid
 
-    # Step 2: any leftover recovery goes into normal budget (up to the cap).
+    # recover normal budget
     gained = 0.0
     if recovered > 0 and state.remaining_budget_seconds < cap:
         state.remaining_budget_seconds = min(
             cap, state.remaining_budget_seconds + recovered
         )
         gained = state.remaining_budget_seconds - before_budget
-
-    # If we've fully recovered back to the normal cap and cleared overtime,
-    # reset the escalation cycle so future over-budget sessions start fresh.
-    just_filled = (
-        bool(before_budget < cap)
-        and bool(state.remaining_budget_seconds >= cap)
-        and bool(state.overtime_seconds <= 0.0)
-    )
-    if just_filled:
-        state.overtime_escalation_level = 0
-        state.overtime_next_popup_timestamp = 0.0
 
     bar = _format_budget_bar(state, is_recovering=True)
     remaining_str = format_duration(state.remaining_budget_seconds)
@@ -503,13 +399,33 @@ def recover_budget(state, elapsed_seconds):
         )
 
 
-def apply_pending_extra_time(state):
-    """Check if the user ran 'hotturkey extra X' and pick up the change.
-    Positive = add time, negative = deduct. Budget never goes below 0.
+# --- CLI pending ---
+def apply_pending_set_time(state):
+    minutes = load_set_minutes()
+    if minutes == 0:
+        return
 
-    Pending minutes are stored in a small sidecar file so CLI commands work
-    whether the monitor is currently running or not.
-    """
+    if minutes > 0:
+        state.remaining_budget_seconds = float(minutes * 60)
+        state.overtime_seconds = 0.0
+        state.overtime_escalation_level = 0
+        log.info(
+            "[COMMAND] set: budget to %.1f min, overtime cleared.",
+            minutes,
+        )
+    elif minutes < 0:
+        debt_minutes = abs(minutes)
+        state.remaining_budget_seconds = 0.0
+        state.overtime_seconds = float(debt_minutes * 60)
+        log.info(
+            "[COMMAND] set: overtime to %.1f min (budget 0).",
+            debt_minutes,
+        )
+
+    save_set_minutes(0.0)
+
+
+def apply_pending_extra_time(state):
     pending_minutes = load_extra_minutes_pending()
     if pending_minutes == 0:
         return
@@ -518,7 +434,6 @@ def apply_pending_extra_time(state):
     before_budget = state.remaining_budget_seconds
     before_overtime = state.overtime_seconds
 
-    # Core math shared with CLI.
     budget_after, overtime_after = apply_extra_seconds(
         before_budget, before_overtime, extra_seconds
     )
@@ -581,124 +496,46 @@ def apply_pending_extra_time(state):
     save_extra_minutes_pending(0.0)
 
 
-def apply_pending_set_time(state):
-    """Check if the user ran 'hotturkey set X' and pick up the change.
-
-    Semantics:
-      - Positive minutes: budget is set to exactly X minutes remaining,
-        overtime is cleared to 0.
-      - Negative minutes: budget is set to 0, overtime debt is set to
-        abs(X) minutes.
-      - Zero minutes: no-op.
-
-    This acts as an override on top of whatever the current state is, and
-    runs before extra-time adjustments.
-    """
-    minutes = load_set_minutes()
-    if minutes == 0:
-        return
-
-    if minutes > 0:
-        state.remaining_budget_seconds = float(minutes * 60)
-        state.overtime_seconds = 0.0
-        # Reset overtime escalation cycle; we're effectively starting fresh.
-        state.overtime_escalation_level = 0
-        state.overtime_next_popup_timestamp = 0.0
-        log.info(
-            "[COMMAND] set: budget to %.1f min, overtime cleared.",
-            minutes,
-        )
-    elif minutes < 0:
-        debt_minutes = abs(minutes)
-        state.remaining_budget_seconds = 0.0
-        state.overtime_seconds = float(debt_minutes * 60)
-        # Level will be recomputed from overtime_seconds by popup logic.
-        log.info(
-            "[COMMAND] set: overtime to %.1f min (budget 0).",
-            debt_minutes,
-        )
-
-    # Clear the pending value so we don't apply it again on the next poll.
-    save_set_minutes(0.0)
+# --- main poll ---
+def _update_tracked_session(state, source_name, session_mode, now, elapsed_seconds):
+    if state.tracked_activity_name != source_name:
+        _end_session(state)
+    _start_session(state, source_name, session_mode, now)
+    state.is_tracked_activity_running = True
+    state.tracked_activity_name = source_name
+    state.seconds_used_this_session += elapsed_seconds
 
 
-# --- Main update function ---
-
-
-def update_budget(state):
-    """Called every poll cycle by run.py. This is where everything comes together:
-    1. Calculate how much time passed since last check
-    2. Pick up any extra time from the CLI
-    3. Detect if a game or tracked site is focused
-    4. If active: start/continue session, subtract from budget
-    5. If idle: end session, recover budget"""
-    perf_start = time.time()
-
-    now = time.time()
-    elapsed_seconds = now - state.last_poll_timestamp
-
-    # Snap elapsed time to neat multiples of the poll interval so logs show
-    # clean 5.0s consumed / 2.5s recovered instead of 5.1 / 1.9 due to jitter.
-    if elapsed_seconds > 0 and POLL_INTERVAL > 0:
-        elapsed_seconds = round(elapsed_seconds / POLL_INTERVAL) * POLL_INTERVAL
-        if elapsed_seconds < 0:
-            elapsed_seconds = 0.0
-
-    elapsed_seconds = clamp_elapsed_for_budget(elapsed_seconds)
-
-    state.last_poll_timestamp = now
-
-    # Keep per-day session totals in sync with the current date.
-    _maybe_reset_session_totals_for_today(state)
-
-    # Pick up any pending 'set' overrides, then extra minutes from the CLI.
-    apply_pending_set_time(state)
-    apply_pending_extra_time(state)
-
-    # --- PERF: measure major steps inside update_budget ---
-    t_idle_start = time.time()
-
-    # Hydrate the known Steam game set from persisted state once per run.
+def _init_steam_games(state):
     global _steam_known_initialized
-    if not _steam_known_initialized:
-        for exe in getattr(state, "known_steam_game_exes", []):
-            if exe:
-                _KNOWN_STEAM_GAME_NAMES.add(exe.lower())
-        _steam_known_initialized = True
-    t_idle_end = time.time()
+    if _steam_known_initialized:
+        return
+    for exe in getattr(state, "known_steam_game_exes", []):
+        if exe:
+            _KNOWN_STEAM_GAME_NAMES.add(exe.lower())
+    _steam_known_initialized = True
 
-    # Check user idle time (keyboard/mouse). If AFK beyond the threshold, we
-    # freeze budget changes for idle/bonus time and (optionally) some tracked
-    # activities depending on their type.
+
+def _update_afk_state():
     global _was_afk
-    idle_check_start = time.time()
     idle_seconds = get_idle_seconds()
     is_afk = idle_seconds >= AFK_IDLE_THRESHOLD
-    idle_check_end = time.time()
-
     if is_afk and not _was_afk:
         log_event("IDLE", message=f"afk (idle {AFK_IDLE_THRESHOLD}s)")
     elif not is_afk and _was_afk:
         log_event("IDLE", message="resumed")
     _was_afk = is_afk
+    return is_afk
 
-    # Keep the known Steam game list fresh so we don't miss exes whose
-    # foreground window only appears briefly between polls (e.g. Arc Raiders).
-    # This scan is expensive, so we throttle it to at most once every
-    # _STEAM_REFRESH_INTERVAL_SECONDS.
+
+def _maybe_refresh_steam(state, now):
     global _last_steam_refresh_time
-    refresh_start = refresh_end = perf_start
     if (now - _last_steam_refresh_time) >= _STEAM_REFRESH_INTERVAL_SECONDS:
-        refresh_start = time.time()
         refresh_known_steam_games(state)
-        refresh_end = time.time()
         _last_steam_refresh_time = time.time()
 
-    detect_start = time.time()
-    mode, source_name = detect_tracked_activity()
-    detect_end = time.time()
 
-    # Log focus changes: entering an activity (BONUS/WATCHING/GAMING/SOCIAL) or leaving to idle.
+def _log_focus_change(mode, source_name):
     global _last_focused_activity
     if mode == "idle":
         if _last_focused_activity is not None:
@@ -720,72 +557,56 @@ def update_budget(state):
         elif mode == "social":
             log_event("FOCUS", message=f"social: {source_name} focused")
 
+
+def _apply_mode_budget(state, mode, source_name, is_afk, now, elapsed_seconds):
     if mode == "consume":
         is_steam_session = source_name.startswith("Steam:")
-        if state.tracked_activity_name != source_name:
-            _end_session(state)
-        _start_session(state, source_name, "consume", now)
-
-        state.is_tracked_activity_running = True
-        state.tracked_activity_name = source_name
-
-        # AFK handling:
-        # Steam games: freeze budget when AFK so idling in menus doesn't drain time.
-        # Tracked sites: always count (you're still watching even if AFK from keyboard).
         if is_afk and is_steam_session:
+            _update_tracked_session(state, source_name, "consume", now, 0)
             log.debug("[IDLE] event=afk_steam_freezing_budget")
         else:
-            state.seconds_used_this_session += elapsed_seconds
+            _update_tracked_session(state, source_name, "consume", now, elapsed_seconds)
             consume_budget(state, elapsed_seconds)
     elif mode == "bonus":
-        if state.tracked_activity_name != source_name:
-            _end_session(state)
-        _start_session(state, source_name, "bonus", now)
-
-        state.is_tracked_activity_running = True
-        state.tracked_activity_name = source_name
-        state.seconds_used_this_session += elapsed_seconds
+        _update_tracked_session(state, source_name, "bonus", now, elapsed_seconds)
         if not is_afk:
             recover_budget(state, elapsed_seconds * BONUS_RECOVERY_MULTIPLIER)
     elif mode == "bonus_app":
-        if state.tracked_activity_name != source_name:
-            _end_session(state)
-        _start_session(state, source_name, "bonus", now)
-
-        state.is_tracked_activity_running = True
-        state.tracked_activity_name = source_name
-        state.seconds_used_this_session += elapsed_seconds
+        _update_tracked_session(state, source_name, "bonus", now, elapsed_seconds)
         if not is_afk:
             recover_budget(state, elapsed_seconds * BONUS_APPS_RECOVERY_MULTIPLIER)
     elif mode == "social":
-        if state.tracked_activity_name != source_name:
-            _end_session(state)
-        _start_session(state, source_name, "social", now)
-
-        state.is_tracked_activity_running = True
-        state.tracked_activity_name = source_name
-        state.seconds_used_this_session += elapsed_seconds
-        # Social media always counts (like watching): no AFK freeze, but budget
-        # consumption is reduced by SOCIAL_CONSUME_RATIO.
+        _update_tracked_session(state, source_name, "social", now, elapsed_seconds)
         consume_budget(state, elapsed_seconds * SOCIAL_CONSUME_RATIO)
     else:
         _end_session(state)
-
-        # When AFK, freeze budget so you don't farm recovery by leaving PC untouched.
         if not is_afk:
             state.other_apps_seconds_today = getattr(
                 state, "other_apps_seconds_today", 0.0
             ) + float(elapsed_seconds)
             recover_budget(state, elapsed_seconds)
 
-    perf_total = (time.time() - perf_start) * 1000.0
-    log.debug(
-        "[PERF] hydrate_ms=%.1f idle_check_ms=%.1f refresh_steam_ms=%.1f detect_ms=%.1f total_ms=%.1f",
-        (t_idle_end - t_idle_start) * 1000.0,
-        (idle_check_end - idle_check_start) * 1000.0,
-        (refresh_end - refresh_start) * 1000.0,
-        (detect_end - detect_start) * 1000.0,
-        perf_total,
-    )
+
+def update_budget(state):
+    now = time.time()
+    elapsed_seconds = now - state.last_poll_timestamp
+
+    if elapsed_seconds > 0 and POLL_INTERVAL > 0:
+        elapsed_seconds = round(elapsed_seconds / POLL_INTERVAL) * POLL_INTERVAL
+
+    elapsed_seconds = clamp_elapsed_for_budget(elapsed_seconds)
+    state.last_poll_timestamp = now
+
+    _maybe_reset_session_totals_for_today(state)
+    apply_pending_set_time(state)
+    apply_pending_extra_time(state)
+
+    _init_steam_games(state)
+    is_afk = _update_afk_state()
+    _maybe_refresh_steam(state, now)
+
+    mode, source_name = detect_tracked_activity()
+    _log_focus_change(mode, source_name)
+    _apply_mode_budget(state, mode, source_name, is_afk, now, elapsed_seconds)
 
     return mode != "idle", source_name

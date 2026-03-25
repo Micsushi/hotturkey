@@ -81,11 +81,13 @@ def _show_fullscreen_popup_simple(message):
 
 def _has_windows_terminal() -> bool:
     import shutil
+
     return shutil.which("wt") is not None
 
 
 def _powershell_exe() -> str:
     import shutil
+
     return shutil.which("pwsh") or shutil.which("powershell") or "powershell"
 
 
@@ -108,7 +110,7 @@ def _launch_popup_powershell(ps1_win: str) -> None:
                 "wt",
                 "-w",
                 "new",
-                "--maximized",
+                "--fullscreen",
                 ps_exe,
                 "-NoLogo",
                 "-ExecutionPolicy",
@@ -156,6 +158,44 @@ def _show_fullscreen_popup_with_body(body):
             "[Console]::InputEncoding = [System.Text.Encoding]::UTF8",
             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
             "$OutputEncoding = [System.Text.Encoding]::UTF8",
+            "",
+            "Add-Type @'",
+            "using System;",
+            "using System.Runtime.InteropServices;",
+            "public class FgWin {",
+            '    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+            '    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);',
+            '    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);',
+            '    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);',
+            '    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);',
+            '    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);',
+            '    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);',
+            '    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();',
+            "    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);",
+            "    public const uint SWP_NOMOVE = 0x0002;",
+            "    public const uint SWP_NOSIZE = 0x0001;",
+            "}",
+            "'@",
+            "",
+            "function Force-Foreground([IntPtr]$hwnd) {",
+            "  $fgHwnd = [FgWin]::GetForegroundWindow()",
+            "  $fgTid = [FgWin]::GetWindowThreadProcessId($fgHwnd, [ref]0)",
+            "  $myTid = [FgWin]::GetCurrentThreadId()",
+            "  if ($fgTid -ne $myTid) {",
+            "    [FgWin]::AttachThreadInput($myTid, $fgTid, $true) | Out-Null",
+            "    [FgWin]::SetForegroundWindow($hwnd) | Out-Null",
+            "    [FgWin]::AttachThreadInput($myTid, $fgTid, $false) | Out-Null",
+            "  } else {",
+            "    [FgWin]::SetForegroundWindow($hwnd) | Out-Null",
+            "  }",
+            "  [FgWin]::BringWindowToTop($hwnd) | Out-Null",
+            "  [FgWin]::ShowWindow($hwnd, 3) | Out-Null",
+            "  [FgWin]::SetWindowPos($hwnd, [FgWin]::HWND_TOPMOST, 0, 0, 0, 0, [FgWin]::SWP_NOMOVE -bor [FgWin]::SWP_NOSIZE) | Out-Null",
+            "}",
+            "",
+            "$myHwnd = (Get-Process -Id $PID).MainWindowHandle",
+            "if ($myHwnd -ne [IntPtr]::Zero) { Force-Foreground $myHwnd }",
+            "",
             "$Host.UI.RawUI.BackgroundColor = 'DarkRed'",
             "$Host.UI.RawUI.ForegroundColor = 'White'",
             "Clear-Host",
@@ -175,6 +215,10 @@ def _show_fullscreen_popup_with_body(body):
             "Show-RedLine 'Press any key to close...'",
             "try { $Host.UI.RawUI.WindowPosition = New-Object System.Management.Automation.Host.Coordinates(0, 0) } catch { }",
             "try { [Console]::SetWindowPosition(0, 0) } catch { }",
+            "",
+            "$myHwnd = (Get-Process -Id $PID).MainWindowHandle",
+            "if ($myHwnd -ne [IntPtr]::Zero) { Force-Foreground $myHwnd }",
+            "",
             "$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')",
         ]
         ps_body = "\r\n".join(ps_lines) + "\r\n"
@@ -226,7 +270,9 @@ def _line_is_vertical_gap(line: str) -> bool:
     return True
 
 
-def _collapse_vertical_blank_runs(lines: List[str], *, max_blank_run: int = 1) -> List[str]:
+def _collapse_vertical_blank_runs(
+    lines: List[str], *, max_blank_run: int = 1
+) -> List[str]:
     out: List[str] = []
     blank_run = 0
     for line in lines:
@@ -257,7 +303,9 @@ def _build_popup_top_text(state, level: int) -> str:
     remaining_budget_seconds = float(getattr(state, "remaining_budget_seconds", 0.0))
     mode = getattr(state, "current_session_mode", "") or ""
 
-    total_to_recover = max(0.0, overtime_seconds) + max(0.0, float(MAX_PLAY_BUDGET) - remaining_budget_seconds)
+    total_to_recover = max(0.0, overtime_seconds) + max(
+        0.0, float(MAX_PLAY_BUDGET) - remaining_budget_seconds
+    )
 
     next_level = level + 1
     threshold_next = overtime_threshold_for_level(next_level)

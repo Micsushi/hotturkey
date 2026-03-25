@@ -41,33 +41,16 @@ from hotturkey.state import (
     overtime_level_from_debt,
 )
 
-# --- Detection helpers ---
-
-# Names of executables we've positively identified as Steam-launched games.
-# Once something has been seen as a Steam game, we keep treating that exe name
-# as a game for the rest of the session, and persist it across runs via
-# AppState.known_steam_game_exes.
 _KNOWN_STEAM_GAME_NAMES = set()
-
-# Width (in characters) of the ASCII budget bar shown in [BUDGET] logs.
 _BUDGET_BAR_WIDTH = 16
-
-# Track AFK state so we can log transitions cleanly.
 _was_afk = False
-
-# Only log WATCHING/BONUS/GAMING when the focused activity changes, not every poll.
 _last_focused_activity = None
-
-# Ensure we only hydrate _KNOWN_STEAM_GAME_NAMES from state once.
 _steam_known_initialized = False
-
-# Throttle how often we scan for new Steam game executables. The scan is now
-# limited to Steam's own child processes (much cheaper than walking every
-# process and its ancestors), so we can keep this interval relatively short.
 _STEAM_REFRESH_INTERVAL_SECONDS = 5.0
 _last_steam_refresh_time = 0.0
 
 
+# 
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [
         ("cbSize", wintypes.UINT),

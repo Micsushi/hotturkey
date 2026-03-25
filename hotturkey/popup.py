@@ -1,10 +1,12 @@
 # popup.py -- Spawns fullscreen red terminal popups when you're in overtime.
 
+import ctypes
 import os
 import random
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import List
 
 from hotturkey.config import (
     MAX_PLAY_BUDGET,
@@ -71,6 +73,7 @@ def _show_fullscreen_popup_simple(message):
         .replace("<", " ")
     )
     cmd = f"color 4F & mode con cols=120 lines=30 & echo. & echo {safe} & echo. & pause"
+    _prepare_windows_foreground_child()
     subprocess.Popen(
         ["cmd", "/c", "start", "", "/max", "cmd", "/c", cmd],
     )
@@ -81,9 +84,59 @@ def _has_windows_terminal() -> bool:
     return shutil.which("wt") is not None
 
 
+def _powershell_exe() -> str:
+    import shutil
+    return shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+
+
+def _prepare_windows_foreground_child():
+    if os.name != "nt":
+        return
+    try:
+        ASFW_ANY = 0xFFFFFFFF
+        ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)
+    except (AttributeError, OSError):
+        pass
+
+
+def _launch_popup_powershell(ps1_win: str) -> None:
+    ps_exe = _powershell_exe()
+    _prepare_windows_foreground_child()
+    if _has_windows_terminal():
+        subprocess.Popen(
+            [
+                "wt",
+                "-w",
+                "new",
+                "--maximized",
+                ps_exe,
+                "-NoLogo",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                ps1_win,
+            ]
+        )
+    else:
+        subprocess.Popen(
+            [
+                "cmd",
+                "/c",
+                "start",
+                "",
+                "/max",
+                ps_exe,
+                "-NoLogo",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                ps1_win,
+            ]
+        )
+
+
 def _show_fullscreen_popup_with_body(body):
     txt_path = None
-    bat_path = None
     ps1_path = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -98,61 +151,48 @@ def _show_fullscreen_popup_with_body(body):
 
         txt_win = str(Path(txt_path).resolve())
 
-        if _has_windows_terminal():
-            ps_lines = [
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
-                "$Host.UI.RawUI.BackgroundColor = 'DarkRed'",
-                "$Host.UI.RawUI.ForegroundColor = 'White'",
-                "Clear-Host",
-                f'Get-Content -Path "{txt_win}" -Encoding UTF8',
-                "Write-Host ''",
-                "Write-Host 'Press any key to close...'",
-                "$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')",
-            ]
-            ps_body = "\r\n".join(ps_lines) + "\r\n"
+        ps_lines = [
+            "$null = & cmd /c 'chcp 65001 >nul'",
+            "[Console]::InputEncoding = [System.Text.Encoding]::UTF8",
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+            "$OutputEncoding = [System.Text.Encoding]::UTF8",
+            "$Host.UI.RawUI.BackgroundColor = 'DarkRed'",
+            "$Host.UI.RawUI.ForegroundColor = 'White'",
+            "Clear-Host",
+            "$winW = [int]$Host.UI.RawUI.WindowSize.Width",
+            "$winH = [int]$Host.UI.RawUI.WindowSize.Height",
+            "$fillW = [Math]::Max(1, $winW - 1)",
+            "function Show-RedLine([string]$s) {",
+            "  if ($s.Length -gt $fillW) { $s = $s.Substring(0, $fillW) }",
+            "  else { $s = $s.PadRight($fillW) }",
+            "  Write-Host $s -BackgroundColor DarkRed -ForegroundColor White",
+            "}",
+            f'$all = @(Get-Content -Path "{txt_win}" -Encoding UTF8)',
+            "$cap = [Math]::Max(2, $winH - 2)",
+            "if ($all.Count -gt $cap) { $all = $all[0..($cap - 2)] + @('...') }",
+            "foreach ($line in $all) { Show-RedLine $line }",
+            "Show-RedLine ''",
+            "Show-RedLine 'Press any key to close...'",
+            "try { $Host.UI.RawUI.WindowPosition = New-Object System.Management.Automation.Host.Coordinates(0, 0) } catch { }",
+            "try { [Console]::SetWindowPosition(0, 0) } catch { }",
+            "$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')",
+        ]
+        ps_body = "\r\n".join(ps_lines) + "\r\n"
 
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                suffix=".ps1",
-                delete=False,
-                encoding="utf-8",
-                newline="",
-            ) as pf:
-                pf.write(ps_body)
-                ps1_path = pf.name
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".ps1",
+            delete=False,
+            encoding="utf-8-sig",
+            newline="",
+        ) as pf:
+            pf.write(ps_body)
+            ps1_path = pf.name
 
-            ps1_win = str(Path(ps1_path).resolve())
-            subprocess.Popen([
-                "wt", "--maximized",
-                "powershell", "-ExecutionPolicy", "Bypass", "-File", ps1_win,
-            ])
-        else:
-            bat_lines = [
-                "@echo off",
-                "chcp 65001 >nul",
-                "color 4F",
-                "mode con cols=120 lines=50",
-                f'type "{txt_win}"',
-                "echo.",
-                "pause",
-            ]
-            bat_body = "\r\n".join(bat_lines) + "\r\n"
-
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                suffix=".bat",
-                delete=False,
-                encoding="utf-8",
-                newline="",
-            ) as bf:
-                bf.write(bat_body)
-                bat_path = bf.name
-
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", "/max", "cmd", "/c", bat_path],
-            )
+        ps1_win = str(Path(ps1_path).resolve())
+        _launch_popup_powershell(ps1_win)
     except OSError:
-        for p in (txt_path, bat_path, ps1_path):
+        for p in (txt_path, ps1_path):
             if p:
                 try:
                     os.unlink(p)
@@ -174,6 +214,40 @@ def _fit_body_to_console(body, *, max_cols: int, max_lines: int) -> str:
         fitted.append(line[:max_cols])
 
     return "\n".join(fitted).strip()
+
+
+def _line_is_vertical_gap(line: str) -> bool:
+    for ch in line:
+        if ch in " \t":
+            continue
+        if ord(ch) == 0x2800:
+            continue
+        return False
+    return True
+
+
+def _collapse_vertical_blank_runs(lines: List[str], *, max_blank_run: int = 1) -> List[str]:
+    out: List[str] = []
+    blank_run = 0
+    for line in lines:
+        if _line_is_vertical_gap(line):
+            blank_run += 1
+            if blank_run <= max_blank_run:
+                out.append(line)
+        else:
+            blank_run = 0
+            out.append(line)
+    return out
+
+
+def _tighten_popup_body(text: str) -> str:
+    lines = text.splitlines()
+    while lines and _line_is_vertical_gap(lines[0]):
+        lines.pop(0)
+    while lines and _line_is_vertical_gap(lines[-1]):
+        lines.pop()
+    lines = _collapse_vertical_blank_runs(lines, max_blank_run=1)
+    return "\n".join(lines)
 
 
 def _build_popup_top_text(state, level: int) -> str:
@@ -220,15 +294,19 @@ def show_fullscreen_popup(message):
                 art_lines = art_lines[:_MAX_ART_LINES]
             trimmed_art = "\n".join(art_lines)
 
-            body = f"{message}\n\n{trimmed_art}"
-            fitted_body = _fit_body_to_console(body, max_cols=_CONSOLE_COLS - 2, max_lines=45)
+            body = _tighten_popup_body(f"{message.rstrip()}\n{trimmed_art}")
+            fitted_body = _fit_body_to_console(
+                body, max_cols=_CONSOLE_COLS - 2, max_lines=45
+            )
             _show_fullscreen_popup_with_body(fitted_body)
             used_art = True
         except OSError as exc:
             log.warning("[POPUP] ascii popup failed, using simple fallback err=%s", exc)
             body = message or ""
     if not used_art:
-        fitted_body = _fit_body_to_console(body, max_cols=_CONSOLE_COLS - 2, max_lines=45)
+        fitted_body = _fit_body_to_console(
+            _tighten_popup_body(body), max_cols=_CONSOLE_COLS - 2, max_lines=45
+        )
         try:
             _show_fullscreen_popup_with_body(fitted_body)
         except OSError:
@@ -259,5 +337,5 @@ def check_and_trigger_popups(state):
     if level > prev_level:
         top_text = _build_popup_top_text(state, level)
         used = format_duration(float(getattr(state, "seconds_used_this_session", 0.0)))
-        top_text = f"{top_text}\n\nSession: {used} on this activity"
+        top_text = f"{top_text}\nSession: {used} on this activity"
         show_fullscreen_popup(top_text)

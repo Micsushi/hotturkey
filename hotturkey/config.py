@@ -78,6 +78,7 @@ def get_effective_max_extra_minutes_per_day(day=None):
 # works no matter where you run the program from.
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".hotturkey")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
+HISTORY_DB = os.path.join(STATE_DIR, "history.db")
 LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
 
 # Small text file that controls the log level (INFO/DEBUG/etc) so the CLI

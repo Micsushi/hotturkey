@@ -32,9 +32,10 @@ class AppState:
         self.overtime_escalation_level = 0
         self.extra_minutes_pending_from_cli = 0.0
         self.gaming_seconds_today = 0.0
-        self.watching_seconds_today = 0.0
-        self.bonus_seconds_today = 0.0
+        self.entertainment_seconds_today = 0.0
         self.social_seconds_today = 0.0
+        self.bonus_sites_seconds_today = 0.0
+        self.bonus_apps_seconds_today = 0.0
         self.other_apps_seconds_today = 0.0
         self.session_totals_date = date.today().isoformat()
         self.known_steam_game_exes = []
@@ -52,9 +53,10 @@ class AppState:
             "overtime_escalation_level": self.overtime_escalation_level,
             "extra_minutes_pending_from_cli": self.extra_minutes_pending_from_cli,
             "gaming_seconds_today": self.gaming_seconds_today,
-            "watching_seconds_today": self.watching_seconds_today,
-            "bonus_seconds_today": self.bonus_seconds_today,
+            "entertainment_seconds_today": self.entertainment_seconds_today,
             "social_seconds_today": self.social_seconds_today,
+            "bonus_sites_seconds_today": self.bonus_sites_seconds_today,
+            "bonus_apps_seconds_today": self.bonus_apps_seconds_today,
             "other_apps_seconds_today": self.other_apps_seconds_today,
             "session_totals_date": self.session_totals_date,
             "known_steam_game_exes": self.known_steam_game_exes,
@@ -80,9 +82,16 @@ class AppState:
             "extra_minutes_pending_from_cli", 0.0
         )
         self.gaming_seconds_today = data.get("gaming_seconds_today", 0.0)
-        self.watching_seconds_today = data.get("watching_seconds_today", 0.0)
-        self.bonus_seconds_today = data.get("bonus_seconds_today", 0.0)
+        self.entertainment_seconds_today = data.get(
+            "entertainment_seconds_today",
+            data.get("watching_seconds_today", 0.0),
+        )
         self.social_seconds_today = data.get("social_seconds_today", 0.0)
+        self.bonus_sites_seconds_today = data.get(
+            "bonus_sites_seconds_today",
+            data.get("bonus_seconds_today", 0.0),
+        )
+        self.bonus_apps_seconds_today = data.get("bonus_apps_seconds_today", 0.0)
         self.other_apps_seconds_today = data.get("other_apps_seconds_today", 0.0)
         self.session_totals_date = data.get(
             "session_totals_date", date.today().isoformat()
@@ -243,11 +252,16 @@ def gather_status_fields(state):
         "extra_today": display_extra_today,
         "overtime_level": getattr(state, "overtime_escalation_level", 0),
         "gaming_today": format_duration(getattr(state, "gaming_seconds_today", 0.0)),
-        "watching_today": format_duration(
-            getattr(state, "watching_seconds_today", 0.0)
+        "entertainment_today": format_duration(
+            getattr(state, "entertainment_seconds_today", 0.0)
         ),
-        "bonus_today": format_duration(getattr(state, "bonus_seconds_today", 0.0)),
         "social_today": format_duration(getattr(state, "social_seconds_today", 0.0)),
+        "bonus_sites_today": format_duration(
+            getattr(state, "bonus_sites_seconds_today", 0.0)
+        ),
+        "bonus_apps_today": format_duration(
+            getattr(state, "bonus_apps_seconds_today", 0.0)
+        ),
         "other_today": format_duration(getattr(state, "other_apps_seconds_today", 0.0)),
     }
 

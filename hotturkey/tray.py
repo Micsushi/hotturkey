@@ -50,23 +50,34 @@ def _build_icon_image(budget_seconds):
     return img
 
 
+_STATUS_LABEL_WIDTH = 24
+
+
+def _tray_status_echo_line(label: str, value: str) -> str:
+    return f" & echo   {label.ljust(_STATUS_LABEL_WIDTH)}{value}"
+
+
 def _on_status(icon, item):  # pylint: disable=unused-argument
     if _state_ref is None:
         return
     s = gather_status_fields(_state_ref)
+    extra_cap = get_effective_max_extra_minutes_per_day()
     msg = (
         "HotTurkey Status"
-        f" & echo."
-        f" & echo   Budget:        {s['remaining']} / {s['total']}"
-        f" & echo   Overtime:      {s['overtime']}"
-        f" & echo   Overtime lvl:  {s['overtime_level']}"
-        f" & echo   Extra today:   {s['extra_today']} / {get_effective_max_extra_minutes_per_day()} min"
-        f" & echo   Total gaming:  {s['gaming_today']}"
-        f" & echo   Total browser: {s['watching_today']}"
-        f" & echo   Total social:  {s['social_today']}"
-        f" & echo   Total bonus:   {s['bonus_today']}"
-        f" & echo   Total other:   {s['other_today']}"
-        f" & echo."
+        " & echo."
+        + _tray_status_echo_line("Budget:", f"{s['remaining']} / {s['total']}")
+        + _tray_status_echo_line("Overtime:", s["overtime"])
+        + _tray_status_echo_line("Overtime lvl:", str(s["overtime_level"]))
+        + _tray_status_echo_line(
+            "Extra today:", f"{s['extra_today']} / {extra_cap} min"
+        )
+        + _tray_status_echo_line("Total gaming:", s["gaming_today"])
+        + _tray_status_echo_line("Total entertainment:", s["entertainment_today"])
+        + _tray_status_echo_line("Total social:", s["social_today"])
+        + _tray_status_echo_line("Total bonus sites:", s["bonus_sites_today"])
+        + _tray_status_echo_line("Total bonus apps:", s["bonus_apps_today"])
+        + _tray_status_echo_line("Total other:", s["other_today"])
+        + " & echo."
     )
     subprocess.Popen(
         ["cmd", "/c", f"echo. & echo  {msg} & pause"],

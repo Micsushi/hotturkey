@@ -134,6 +134,27 @@ Without PATH: `python -m hotturkey.cli <subcommand>` from the project folder.
 
 Changes apply on the next poll cycle.
 
+### History & charts
+
+Daily totals and per-session history are stored in SQLite at `%USERPROFILE%\.hotturkey\history.db`. The CLI refreshes today’s row from `state.json` when you run these commands so numbers stay in sync with `ht status`.
+
+| Command | Effect |
+|---------|--------|
+| `ht history` | Table of daily totals (gaming, entertainment, social, bonus sites, bonus apps, other) for the last 7 days |
+| `ht history --days 30` | Same, last 30 days |
+| `ht history --date 2026-03-25` | List sessions for that date (start/end, activity, mode, duration) |
+| `ht history --chart` | ASCII stacked bar per day in the terminal |
+| `ht history --plot` | One matplotlib window: pie + stacked bar side by side (requires `matplotlib`; hover slices/segments for **H:MM**) |
+| `ht history --date 2026-03-25 --plot` | Sessions table plus charts; pie uses that date |
+| `ht pie` | Pie chart for **today** (or latest day in range) |
+| `ht pie --date 2026-03-25` | Pie chart for a specific date |
+| `ht pie --days 14` | Load data context from last 14 days (pie still targets `--date` or today) |
+| `ht bar` | Stacked bar chart for the last 7 days |
+| `ht bar --days 30` | Stacked bar for the last 30 days |
+| `ht clear-sessions --yes` | Delete **all** rows in the `sessions` table (per-session log only; `daily_totals` unchanged) |
+
+Install dependencies (including matplotlib) with `pip install -e .` from the project folder.
+
 ---
 
 ## Dev Commands

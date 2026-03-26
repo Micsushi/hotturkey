@@ -261,10 +261,14 @@ def _format_budget_bar(state, is_recovering: bool) -> str:
 def _maybe_reset_session_totals_for_today(state) -> None:
     today_str = date.today().isoformat()
     if getattr(state, "session_totals_date", "") != today_str:
+        from hotturkey.db import upsert_daily_totals
+
+        upsert_daily_totals(state)
         state.gaming_seconds_today = 0.0
-        state.watching_seconds_today = 0.0
-        state.bonus_seconds_today = 0.0
+        state.entertainment_seconds_today = 0.0
         state.social_seconds_today = 0.0
+        state.bonus_sites_seconds_today = 0.0
+        state.bonus_apps_seconds_today = 0.0
         state.other_apps_seconds_today = 0.0
         state.session_totals_date = today_str
 
@@ -280,13 +284,17 @@ def _add_session_time_to_daily_totals(state, seconds_used: float) -> None:
                 state, "gaming_seconds_today", 0.0
             ) + float(seconds_used)
         else:
-            state.watching_seconds_today = getattr(
-                state, "watching_seconds_today", 0.0
+            state.entertainment_seconds_today = getattr(
+                state, "entertainment_seconds_today", 0.0
             ) + float(seconds_used)
     elif mode == "bonus":
-        state.bonus_seconds_today = getattr(state, "bonus_seconds_today", 0.0) + float(
-            seconds_used
-        )
+        state.bonus_sites_seconds_today = getattr(
+            state, "bonus_sites_seconds_today", 0.0
+        ) + float(seconds_used)
+    elif mode == "bonus_app":
+        state.bonus_apps_seconds_today = getattr(
+            state, "bonus_apps_seconds_today", 0.0
+        ) + float(seconds_used)
     elif mode == "social":
         state.social_seconds_today = getattr(
             state, "social_seconds_today", 0.0
@@ -298,6 +306,20 @@ def _end_session(state) -> None:
         return
     used_s = int(state.seconds_used_this_session)
     _add_session_time_to_daily_totals(state, used_s)
+
+    if used_s > 0:
+        from hotturkey.db import insert_session
+
+        now = time.time()
+        insert_session(
+            date_str=getattr(state, "session_totals_date", date.today().isoformat()),
+            activity=state.tracked_activity_name,
+            mode=getattr(state, "current_session_mode", ""),
+            start_ts=state.current_session_start_timestamp,
+            end_ts=now,
+            duration_s=used_s,
+        )
+
     log_event(
         "SESSION",
         message=f"session ended: {state.tracked_activity_name}, {used_s}s used",
@@ -572,7 +594,7 @@ def _apply_mode_budget(state, mode, source_name, is_afk, now, elapsed_seconds):
         if not is_afk:
             recover_budget(state, elapsed_seconds * BONUS_RECOVERY_MULTIPLIER)
     elif mode == "bonus_app":
-        _update_tracked_session(state, source_name, "bonus", now, elapsed_seconds)
+        _update_tracked_session(state, source_name, "bonus_app", now, elapsed_seconds)
         if not is_afk:
             recover_budget(state, elapsed_seconds * BONUS_APPS_RECOVERY_MULTIPLIER)
     elif mode == "social":

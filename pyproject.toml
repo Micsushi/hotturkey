@@ -13,6 +13,7 @@ dependencies = [
     "pystray",
     "Pillow",
     "pywin32",
+    "matplotlib>=3.5",
 ]
 
 [project.scripts]
@@ -36,6 +37,7 @@ hotturkey = ["ascii_art/*.txt", "popup_messages/*.txt"]
 load-plugins = []
 ignore-patterns = ["test_.*\\.py"]
 extension-pkg-allow-list = ["win32event", "win32api", "win32gui", "win32process"]
+ignored-modules = ["matplotlib", "matplotlib.pyplot", "matplotlib.backends", "matplotlib.backends.backend_tkagg"]
 
 [tool.pylint."messages control"]
 disable = [
@@ -44,6 +46,7 @@ disable = [
     "missing-function-docstring",
     "too-few-public-methods",
     "too-many-arguments",
+    "too-many-positional-arguments",
     "too-many-locals",
     "too-many-branches",
     "too-many-statements",

@@ -11,6 +11,13 @@ from hotturkey.config import (
     STATE_DIR,
     LOG_LEVEL_FILE,
 )
+from hotturkey.db import (
+    clear_all_sessions,
+    init_db,
+    query_daily_totals,
+    query_sessions,
+    upsert_daily_totals,
+)
 from hotturkey.state import (
     load_state,
     load_extra_minutes_pending,
@@ -28,20 +35,24 @@ from . import runner
 def handle_status():
     """Read state.json and print the current budget and overtime info."""
     state = load_state()
+    upsert_daily_totals(state)
+
     s = gather_status_fields(state)
     extra_cap = get_effective_max_extra_minutes_per_day()
 
+    lw = 22
     print(f"""
             HotTurkey Status
-            Budget remaining : {s['remaining']} / {s['total']}
-            Overtime debt    : {s['overtime']}
-            Overtime level   : {s['overtime_level']}
-            Extra today      : {s['extra_today']} / {extra_cap} min
-            Total gaming     : {s['gaming_today']}
-            Total browser    : {s['watching_today']}
-            Total social     : {s['social_today']}
-            Total bonus      : {s['bonus_today']}
-            Total other apps : {s['other_today']}
+            {('Budget remaining').ljust(lw)}: {s['remaining']} / {s['total']}
+            {('Overtime debt').ljust(lw)}: {s['overtime']}
+            {('Overtime level').ljust(lw)}: {s['overtime_level']}
+            {('Extra today').ljust(lw)}: {s['extra_today']} / {extra_cap} min
+            {('Total gaming').ljust(lw)}: {s['gaming_today']}
+            {('Total entertainment').ljust(lw)}: {s['entertainment_today']}
+            {('Total social').ljust(lw)}: {s['social_today']}
+            {('Total bonus sites').ljust(lw)}: {s['bonus_sites_today']}
+            {('Total bonus apps').ljust(lw)}: {s['bonus_apps_today']}
+            {('Total other apps').ljust(lw)}: {s['other_today']}
         """)
 
 
@@ -216,6 +227,164 @@ def handle_lesslog():
     print()
 
 
+def _sync_db():
+    init_db()
+    upsert_daily_totals(load_state())
+
+
+def handle_history(days, date_str, chart, plot):
+    _sync_db()
+    rows = query_daily_totals(days)
+
+    if date_str:
+        sessions = query_sessions(date_str)
+        if not sessions:
+            print(f"\n  No sessions recorded for {date_str}.\n")
+        else:
+            print(f"\n  Sessions for {date_str}:\n")
+            print(f"  {'Time':<15} {'Activity':<30} {'Mode':<14} {'Duration':>8}")
+            print(f"  {'-'*15} {'-'*30} {'-'*14} {'-'*8}")
+            for s in sessions:
+                from datetime import datetime as dt
+
+                start = dt.fromtimestamp(s["start_ts"]).strftime("%H:%M")
+                end = dt.fromtimestamp(s["end_ts"]).strftime("%H:%M")
+                dur = format_duration(s["duration_s"])
+                print(
+                    f"  {start}-{end:<10} {s['activity']:<30} ({s['mode']:<12}) {dur:>8}"
+                )
+            print()
+        if plot:
+            from hotturkey.plots import show_both
+
+            show_both(rows, pie_date=date_str)
+        return
+
+    if not rows:
+        print(f"\n  No history data found for the last {days} days.\n")
+        if plot:
+            print("  Nothing to plot.\n")
+        return
+
+    if chart:
+        _print_chart(rows)
+    if plot:
+        from hotturkey.plots import show_both
+
+        show_both(rows, pie_date=None)
+    elif not chart:
+        _print_table(rows)
+
+
+def handle_pie(days, date_str):
+    from hotturkey.plots import show_pie
+
+    _sync_db()
+    rows = query_daily_totals(days)
+    show_pie(rows, pie_date=date_str)
+
+
+def handle_bar(days):
+    from hotturkey.plots import show_bar
+
+    _sync_db()
+    rows = query_daily_totals(days)
+    show_bar(rows)
+
+
+def handle_clear_sessions(yes):
+    """Remove all rows from the sessions table (daily_totals unchanged)."""
+    if not yes:
+        print()
+        print("  This deletes every session record in history.db.")
+        print("  Run again with --yes to confirm.")
+        print()
+        sys.exit(1)
+    n = clear_all_sessions()
+    print()
+    print(f"  Deleted {n} session row(s). Daily totals were not changed.")
+    print()
+
+
+def _print_table(rows):
+    print()
+    print(
+        f"  {'Date':<12} {'Gaming':>8} {'Entertainment':>13} {'Social':>8} "
+        f"{'BonusSite':>10} {'BonusApp':>10} {'Other':>8}"
+    )
+    print(f"  {'-'*12} {'-'*8} {'-'*13} {'-'*8} {'-'*10} {'-'*10} {'-'*8}")
+    for r in rows:
+        print(
+            f"  {r['date']:<12} "
+            f"{format_duration(r['gaming_s']):>8} "
+            f"{format_duration(r['entertainment_s']):>13} "
+            f"{format_duration(r['social_s']):>8} "
+            f"{format_duration(r['bonus_sites_s']):>10} "
+            f"{format_duration(r['bonus_apps_s']):>10} "
+            f"{format_duration(r['other_apps_s']):>8}"
+        )
+    print()
+
+
+_CHART_SPEC = [
+    ("gaming_s", "#", "Gaming"),
+    ("entertainment_s", "=", "Entertainment"),
+    ("social_s", "+", "Social"),
+    ("bonus_sites_s", ".", "Bonus sites"),
+    ("bonus_apps_s", ":", "Bonus apps"),
+    ("other_apps_s", "-", "Other"),
+]
+_CHART_FILL_WIDTH = 56
+
+
+def _chart_segment_widths(seconds_list, fill_budget):
+    n = len(seconds_list)
+    if n == 0:
+        return []
+    fill_budget = max(fill_budget, n)
+    total = sum(seconds_list)
+    if total <= 0:
+        return [1] * n
+
+    budget_left = fill_budget - n
+    exact = [(s / total) * budget_left for s in seconds_list]
+    extra_floor = [int(e) for e in exact]
+    remainder = budget_left - sum(extra_floor)
+    order = sorted(range(n), key=lambda i: exact[i] - extra_floor[i], reverse=True)
+    for k in range(remainder):
+        extra_floor[order[k]] += 1
+    return [1 + extra_floor[i] for i in range(n)]
+
+
+def _print_chart(rows):
+    print()
+    for r in rows:
+        pairs = [(key, ch) for key, ch, _ in _CHART_SPEC if r[key] > 0]
+        if not pairs:
+            print(f"  {r['date']}  (no activity)")
+            continue
+        total = sum(r[k] for k, _ in pairs)
+        n = len(pairs)
+        sep_slots = max(0, n - 1)
+        fill_budget = max(n, _CHART_FILL_WIDTH - sep_slots)
+        seconds_list = [r[k] for k, _ in pairs]
+        widths = _chart_segment_widths(seconds_list, fill_budget)
+        if not widths:
+            continue
+        parts = []
+        for (key, ch), w in zip(pairs, widths):
+            parts.append(ch * w)
+        bar = "|".join(parts)
+        total_dur = format_duration(total)
+        print(f"  {r['date']}  [{bar}] {total_dur}")
+
+    print()
+    legend = "  Legend:  "
+    legend += "   ".join(f"{name} ({ch})" for _, ch, name in _CHART_SPEC)
+    print(legend)
+    print()
+
+
 def main():
     """Parse command-line arguments and route to the right handler."""
     parser = argparse.ArgumentParser(
@@ -260,6 +429,60 @@ def main():
     )
     subparsers.add_parser("lesslog", help="Set log level to INFO and restart HotTurkey")
 
+    history_parser = subparsers.add_parser(
+        "history", help="Show historical activity data"
+    )
+    history_parser.add_argument(
+        "--days", type=int, default=7, help="Number of days to show (default: 7)"
+    )
+    history_parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Show sessions for a specific date (YYYY-MM-DD)",
+    )
+    history_parser.add_argument(
+        "--chart", action="store_true", help="Show a text-based bar chart"
+    )
+    history_parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Open pie + bar chart side-by-side in one window (matplotlib)",
+    )
+
+    pie_parser = subparsers.add_parser(
+        "pie", help="Open a pie chart of one day's activity breakdown"
+    )
+    pie_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days of data to load (default: 7)",
+    )
+    pie_parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Date to chart (YYYY-MM-DD). Defaults to today.",
+    )
+
+    bar_parser = subparsers.add_parser(
+        "bar", help="Open a stacked bar chart of daily totals"
+    )
+    bar_parser.add_argument(
+        "--days", type=int, default=7, help="Number of days to show (default: 7)"
+    )
+
+    clear_sess = subparsers.add_parser(
+        "clear-sessions",
+        help="Delete all per-session rows from the database (daily totals kept)",
+    )
+    clear_sess.add_argument(
+        "--yes",
+        action="store_true",
+        help="Required: confirm you want to wipe session history",
+    )
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -281,6 +504,14 @@ def main():
         handle_morelog()
     elif args.command == "lesslog":
         handle_lesslog()
+    elif args.command == "history":
+        handle_history(args.days, args.date, args.chart, args.plot)
+    elif args.command == "pie":
+        handle_pie(args.days, args.date)
+    elif args.command == "bar":
+        handle_bar(args.days)
+    elif args.command == "clear-sessions":
+        handle_clear_sessions(args.yes)
     else:
         parser.print_help()
 

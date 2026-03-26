@@ -27,6 +27,7 @@ from hotturkey.popup import check_and_trigger_popups
 from hotturkey.tray import create_tray_icon, update_tray_icon
 from hotturkey.logger import log, log_event, refresh_log_level_from_disk
 from hotturkey.utils import format_duration
+from hotturkey.db import init_db
 
 _running = True
 _shutdown_reason = None
@@ -73,6 +74,7 @@ def monitor_loop():
 
 
 def _monitor_loop_inner():
+    init_db()
     state = load_state()
 
     _reset_session_state(state)

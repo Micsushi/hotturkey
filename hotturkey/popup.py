@@ -76,13 +76,8 @@ def _show_fullscreen_popup_simple(message):
     _prepare_windows_foreground_child()
     subprocess.Popen(
         ["cmd", "/c", "start", "", "/max", "cmd", "/c", cmd],
+        shell=True,
     )
-
-
-def _has_windows_terminal() -> bool:
-    import shutil
-
-    return shutil.which("wt") is not None
 
 
 def _powershell_exe() -> str:
@@ -104,37 +99,22 @@ def _prepare_windows_foreground_child():
 def _launch_popup_powershell(ps1_win: str) -> None:
     ps_exe = _powershell_exe()
     _prepare_windows_foreground_child()
-    if _has_windows_terminal():
-        subprocess.Popen(
-            [
-                "wt",
-                "-w",
-                "new",
-                "--fullscreen",
-                ps_exe,
-                "-NoLogo",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                ps1_win,
-            ]
-        )
-    else:
-        subprocess.Popen(
-            [
-                "cmd",
-                "/c",
-                "start",
-                "",
-                "/max",
-                ps_exe,
-                "-NoLogo",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                ps1_win,
-            ]
-        )
+    subprocess.Popen(
+        [
+            "cmd",
+            "/c",
+            "start",
+            "",
+            "/max",
+            ps_exe,
+            "-NoLogo",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            ps1_win,
+        ],
+        shell=True,
+    )
 
 
 def _show_fullscreen_popup_with_body(body):
@@ -174,6 +154,7 @@ def _show_fullscreen_popup_with_body(body):
             "    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);",
             "    public const uint SWP_NOMOVE = 0x0002;",
             "    public const uint SWP_NOSIZE = 0x0001;",
+            "    public const uint SWP_SHOWWINDOW = 0x0040;",
             "}",
             "'@",
             "",
@@ -189,12 +170,18 @@ def _show_fullscreen_popup_with_body(body):
             "    [FgWin]::SetForegroundWindow($hwnd) | Out-Null",
             "  }",
             "  [FgWin]::BringWindowToTop($hwnd) | Out-Null",
-            "  [FgWin]::ShowWindow($hwnd, 3) | Out-Null",
-            "  [FgWin]::SetWindowPos($hwnd, [FgWin]::HWND_TOPMOST, 0, 0, 0, 0, [FgWin]::SWP_NOMOVE -bor [FgWin]::SWP_NOSIZE) | Out-Null",
+            "  [FgWin]::ShowWindow($hwnd, 5) | Out-Null",
+            "  [FgWin]::SetWindowPos($hwnd, [FgWin]::HWND_TOPMOST, 0, 0, 0, 0, [FgWin]::SWP_NOMOVE -bor [FgWin]::SWP_NOSIZE -bor [FgWin]::SWP_SHOWWINDOW) | Out-Null",
             "}",
             "",
             "$myHwnd = (Get-Process -Id $PID).MainWindowHandle",
-            "if ($myHwnd -ne [IntPtr]::Zero) { Force-Foreground $myHwnd }",
+            "if ($myHwnd -ne [IntPtr]::Zero) {",
+            "  # Try multiple times to bring window to foreground",
+            "  for ($i = 0; $i -lt 5; $i++) {",
+            "    Force-Foreground $myHwnd",
+            "    Start-Sleep -Milliseconds 100",
+            "  }",
+            "}",
             "",
             "$Host.UI.RawUI.BackgroundColor = 'DarkRed'",
             "$Host.UI.RawUI.ForegroundColor = 'White'",
@@ -217,7 +204,13 @@ def _show_fullscreen_popup_with_body(body):
             "try { [Console]::SetWindowPosition(0, 0) } catch { }",
             "",
             "$myHwnd = (Get-Process -Id $PID).MainWindowHandle",
-            "if ($myHwnd -ne [IntPtr]::Zero) { Force-Foreground $myHwnd }",
+            "if ($myHwnd -ne [IntPtr]::Zero) {",
+            "  # Try again after displaying content",
+            "  for ($i = 0; $i -lt 3; $i++) {",
+            "    Force-Foreground $myHwnd",
+            "    Start-Sleep -Milliseconds 50",
+            "  }",
+            "}",
             "",
             "$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')",
         ]

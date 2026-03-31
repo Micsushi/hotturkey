@@ -41,6 +41,9 @@ from hotturkey.state import (
     overtime_level_from_debt,
 )
 
+# Names (lowercase) of executables that are currently detected as Steam descendants.
+# This is intentionally NOT a historical "learned forever" list, to avoid misclassifying
+# unrelated apps (e.g. browsers) that were once launched via Steam.
 _KNOWN_STEAM_GAME_NAMES = set()
 _BUDGET_BAR_WIDTH = 16
 _was_afk = False
@@ -96,6 +99,7 @@ def is_steam_ancestor(pid):
 
 def refresh_known_steam_games(state):
     try:
+        current_names = set()
         steam_procs = []
         for proc in psutil.process_iter(["pid", "name"]):
             name = proc.info.get("name") or ""
@@ -105,6 +109,7 @@ def refresh_known_steam_games(state):
                 steam_procs.append(proc)
 
         if not steam_procs:
+            _KNOWN_STEAM_GAME_NAMES.clear()
             return
 
         for steam_proc in steam_procs:
@@ -125,16 +130,19 @@ def refresh_known_steam_games(state):
                 lname = name.lower()
                 if (
                     lname in STEAM_HELPER_PROCESS_NAMES
-                    or lname in _KNOWN_STEAM_GAME_NAMES
                 ):
                     continue
 
-                _KNOWN_STEAM_GAME_NAMES.add(lname)
+                current_names.add(lname)
                 if lname not in (ex.lower() for ex in state.known_steam_game_exes):
                     state.known_steam_game_exes.append(lname)
                 log_event("GAMING", message=f"learned: {name}")
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
         pass
+    else:
+        # Replace the working set each refresh so stale "learned" names don't stick forever.
+        _KNOWN_STEAM_GAME_NAMES.clear()
+        _KNOWN_STEAM_GAME_NAMES.update(current_names)
 
 
 def detect_steam_game_focused(foreground_pid):
@@ -153,7 +161,6 @@ def detect_steam_game_focused(foreground_pid):
         return proc.name()
 
     if is_steam_ancestor(foreground_pid):
-        _KNOWN_STEAM_GAME_NAMES.add(proc_name)
         return proc.name()
 
     return ""
@@ -528,13 +535,12 @@ def _update_tracked_session(state, source_name, session_mode, now, elapsed_secon
     state.seconds_used_this_session += elapsed_seconds
 
 
-def _init_steam_games(state):
+def _init_steam_games(_state):
     global _steam_known_initialized
     if _steam_known_initialized:
         return
-    for exe in getattr(state, "known_steam_game_exes", []):
-        if exe:
-            _KNOWN_STEAM_GAME_NAMES.add(exe.lower())
+    # Do not seed the current Steam-descendant set from historical state.
+    # The refresh loop will repopulate from actual Steam processes.
     _steam_known_initialized = True
 
 

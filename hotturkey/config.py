@@ -48,7 +48,7 @@ TRACKED_SITES = [
     "hd free",
 ]
 BONUS_SITES = ["kwiziq", "leetcode", "github"]
-BONUS_APPS = ["cursor", "vscode", "terminal", "command prompt"]
+BONUS_APPS = ["cursor", "vscode", "visual studio code", "terminal", "command prompt"]
 SOCIAL_APPS_OR_SITES = ["whatsapp", "discord"]
 
 

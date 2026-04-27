@@ -146,7 +146,7 @@ def refresh_known_steam_games(state):
 
 
 def detect_steam_game_focused(foreground_pid):
-    if foreground_pid == 0:
+    if foreground_pid <= 0:
         return ""
     try:
         proc = psutil.Process(foreground_pid)

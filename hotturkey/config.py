@@ -3,13 +3,13 @@ from datetime import date
 
 # Configurable values
 
-# Total daily play budget in seconds (default: 1 hour).
-MAX_PLAY_BUDGET = 3600
+# Total daily play budget in seconds (default: 3 hour).
+MAX_PLAY_BUDGET = 3600*3
 # Max extra minutes that can be granted via CLI per day.
 MAX_EXTRA_MINUTES_PER_DAY = 60
 # Days of the week that get bonus extra-time cap (double). Monday=0, Sunday=6.
 # Tue, Thu, Sat, Sun get double the daily extra cap.
-EXTRA_TIME_BONUS_DAYS = (1, 3, 5, 6)
+EXTRA_TIME_BONUS_DAYS = (4, 5, 6)
 EXTRA_TIME_BONUS_DAY_MULTIPLIER = 2.0
 # Fraction of a second recovered per idle/bonus second (0.5 = 1s idle -> 0.5s back).
 BUDGET_RECOVERY_PER_SECOND_RATIO = 0.5
@@ -48,7 +48,7 @@ TRACKED_SITES = [
     "hd free",
 ]
 BONUS_SITES = ["kwiziq", "leetcode", "github"]
-BONUS_APPS = ["cursor", "vscode", "visual studio code", "terminal", "command prompt"]
+BONUS_APPS = ["cursor", "vscode", "visual studio code", "terminal", "command prompt", "zed", "antigravity"]
 SOCIAL_APPS_OR_SITES = ["whatsapp", "discord"]
 
 

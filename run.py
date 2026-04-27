@@ -233,8 +233,11 @@ def launch():
         env = os.environ.copy()
         env["HOTTURKEY_DETACHED"] = "1"
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        executable = sys.executable
+        if executable.endswith("python.exe"):
+            executable = executable.replace("python.exe", "pythonw.exe")
         subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__)],
+            [executable, os.path.abspath(__file__)],
             cwd=script_dir,
             env=env,
             creationflags=subprocess.DETACHED_PROCESS

@@ -29,6 +29,7 @@ from hotturkey.state import (
     gather_status_fields,
 )
 from hotturkey.utils import format_duration
+from hotturkey.monitor import foreground_diagnostics_report
 from . import runner
 
 
@@ -385,6 +386,15 @@ def _print_chart(rows):
     print()
 
 
+def handle_focus():
+    """Print foreground PID, exe, window title, and how HotTurkey would classify."""
+    state = load_state()
+    report = foreground_diagnostics_report(state)
+    print()
+    print(report)
+    print()
+
+
 def main():
     """Parse command-line arguments and route to the right handler."""
     parser = argparse.ArgumentParser(
@@ -393,6 +403,11 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("status", help="Show current budget and tracking info")
+
+    subparsers.add_parser(
+        "focus",
+        help="Show foreground exe and classification (focus game window first)",
+    )
 
     extra_parser = subparsers.add_parser(
         "extra", help="Add or remove play time in minutes (negative to deduct)"
@@ -487,6 +502,8 @@ def main():
 
     if args.command == "status":
         handle_status()
+    elif args.command == "focus":
+        handle_focus()
     elif args.command == "extra":
         handle_extra(args.minutes)
     elif args.command == "set":

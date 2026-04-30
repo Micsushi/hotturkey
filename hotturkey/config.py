@@ -46,6 +46,7 @@ TRACKED_SITES = [
     # Some watch sites (e.g. watchseries.mn) don't include the brand/domain
     # in the browser tab title, but do include "HD free".
     "hd free",
+    "gogoanime",
 ]
 BONUS_SITES = ["kwiziq", "leetcode", "github"]
 BONUS_APPS = ["cursor", "vscode", "visual studio code", "terminal", "command prompt", "zed", "antigravity"]
@@ -86,6 +87,12 @@ LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
 LOG_LEVEL_FILE = os.path.join(STATE_DIR, "loglevel.txt")
 
 STEAM_PROCESS_NAME = "steam.exe"
+
+# Exe names (lowercase) that are always counted as gaming, regardless of Steam
+# ancestry. Use this for games that launch through a non-Steam intermediary
+# (e.g. a publisher launcher that breaks the process parent chain).
+# Example: publisher clients that detach from Steam: Arc Raiders runs as Pioneergame.exe
+KNOWN_GAME_EXECUTABLES: set = {"pioneergame.exe"}
 
 STEAM_HELPER_PROCESS_NAMES = {
     "steam.exe",

@@ -13,6 +13,7 @@ from datetime import date
 from hotturkey.config import (
     STEAM_PROCESS_NAME,
     STEAM_HELPER_PROCESS_NAMES,
+    KNOWN_GAME_EXECUTABLES,
     TRACKED_BROWSERS,
     TRACKED_SITES,
     MAX_PLAY_BUDGET,
@@ -145,6 +146,40 @@ def refresh_known_steam_games(state):
         _KNOWN_STEAM_GAME_NAMES.update(current_names)
 
 
+def read_steam_env_for_pid(pid: int) -> tuple[str | None, str | None, str]:
+    """Return (SteamAppId, SteamGameId, status).
+
+    status is 'ok', 'missing', 'no_process', or 'access_denied' (Windows often
+    blocks Process.environ() without elevation for non-owned processes).
+    """
+    try:
+        env = psutil.Process(pid).environ()
+    except psutil.NoSuchProcess:
+        return None, None, "no_process"
+    except psutil.AccessDenied:
+        return None, None, "access_denied"
+    except psutil.Error:
+        return None, None, "error"
+    sid = env.get("SteamAppId")
+    gid = env.get("SteamGameId")
+    if sid or gid:
+        return sid, gid, "ok"
+    return None, None, "missing"
+
+
+def has_steam_env(pid: int) -> bool:
+    """Return True if the process carries Steam-injected env vars.
+
+    Steam sets SteamAppId and SteamGameId on every game process it launches.
+    Child processes inherit those vars, so this detects games launched through
+    an intermediate publisher launcher even when the parent-chain check fails.
+    """
+    sid, gid, status = read_steam_env_for_pid(pid)
+    if status in ("no_process", "access_denied", "error"):
+        return False
+    return bool(sid or gid)
+
+
 def detect_steam_game_focused(foreground_pid):
     if foreground_pid <= 0:
         return ""
@@ -160,10 +195,114 @@ def detect_steam_game_focused(foreground_pid):
     if proc_name in _KNOWN_STEAM_GAME_NAMES:
         return proc.name()
 
+    if proc_name in KNOWN_GAME_EXECUTABLES:
+        return proc.name()
+
     if is_steam_ancestor(foreground_pid):
         return proc.name()
 
+    if has_steam_env(foreground_pid):
+        log_event("GAMING", message=f"detected via Steam env: {proc.name()}")
+        return proc.name()
+
     return ""
+
+
+def parent_process_chain(pid: int, max_levels: int = 14) -> str:
+    """Foreground process left, oldest ancestor right."""
+    if pid <= 0:
+        return "(no foreground window)"
+    names: list[str] = []
+    try:
+        proc = psutil.Process(pid)
+        for _ in range(max_levels):
+            names.append(proc.name())
+            parent = proc.parent()
+            if parent is None:
+                break
+            proc = parent
+    except psutil.AccessDenied:
+        return " <- ".join(names) + " <- (access denied reading further)"
+    except psutil.NoSuchProcess:
+        return " <- ".join(names) if names else "(process vanished)"
+    return " <- ".join(names)
+
+
+def foreground_diagnostics_report(state) -> str:
+    """One-shot snapshot for debugging classify-miss issues. Refreshes Steam child set."""
+    refresh_known_steam_games(state)
+    pid, title = get_foreground_window_info()
+    lines = [
+        "HotTurkey foreground snapshot (focus target window)",
+        "",
+        f"Window title: {title!r}",
+    ]
+    if pid <= 0:
+        lines.extend(["PID: (none)", "", "Nothing focused or cannot read HWND."])
+        return "\n".join(lines)
+
+    lines.append(f"PID: {pid}")
+    pname = ""
+
+    try:
+        proc = psutil.Process(pid)
+        pname = proc.name()
+        lines.append(f"Process name (.exe): {pname}")
+        try:
+            exe_path = proc.exe()
+            lines.append(f"Executable path: {exe_path}")
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            lines.append("Executable path: (unavailable)")
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        lines.append(f"(could not inspect process: {exc})")
+
+    steam_app_id, steam_game_id, steam_env_status = read_steam_env_for_pid(pid)
+    lines.extend(
+        [
+            "",
+            f"Parent chain: {parent_process_chain(pid)}",
+            "",
+            f"Steam ancestry (walk parents for steam.exe): {
+                'yes' if is_steam_ancestor(pid) else 'no'
+            }",
+            f"In current Steam descendant set ({len(_KNOWN_STEAM_GAME_NAMES)} exe names): "
+            f"{'yes' if pname.lower() in _KNOWN_STEAM_GAME_NAMES else 'no'}",
+            f"In KNOWN_GAME_EXECUTABLES config: "
+            f"{'yes' if pname.lower() in KNOWN_GAME_EXECUTABLES else 'no'}",
+            f"Steam env read: status={steam_env_status}"
+            + (
+                f", SteamAppId={steam_app_id!r}, SteamGameId={steam_game_id!r}"
+                if steam_env_status == "ok" and (steam_app_id or steam_game_id)
+                else ""
+            ),
+        ]
+    )
+    if steam_env_status == "access_denied":
+        lines.append(
+            "  (HotTurkey cannot read this process environ without elevation; Steam "
+            "env detection will not fire. Add exe to KNOWN_GAME_EXECUTABLES if needed.)"
+        )
+
+    if pname:
+        steam_label = detect_steam_game_focused(pid)
+        lines.extend(
+            [
+                "",
+                f"detect_steam_game_focused: {steam_label or '(empty)'}",
+            ]
+        )
+
+    mode, label = detect_tracked_activity()
+    lines.extend(
+        [
+            "",
+            "HotTurkey would use (first match wins: bonus sites > bonus apps "
+            "> steam > browser keywords > social):",
+            f"  mode={mode!r}",
+            f"  label={label!r}",
+        ]
+    )
+    return "\n".join(lines)
 
 
 # Should look into something better than this

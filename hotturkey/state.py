@@ -9,10 +9,13 @@ from datetime import date
 from hotturkey.config import (
     STATE_DIR,
     STATE_FILE,
+    MANUAL_ACTIVITY_OVERRIDES_FILE,
     MAX_PLAY_BUDGET,
     OVERTIME_INTERVAL_DECAY_FACTOR,
     OVERTIME_MIN_INTERVAL_SECONDS,
 )
+
+_VALID_MANUAL_ACTIVITY_MODES = frozenset({"consume", "bonus", "bonus_app", "social"})
 
 
 class AppState:
@@ -99,15 +102,73 @@ class AppState:
         self.known_steam_game_exes = data.get("known_steam_game_exes", [])
 
 
-# --- state.json ---
+def validate_manual_activity_overrides_dict(raw) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    cleaned = {}
+    for k, v in raw.items():
+        if not isinstance(k, str) or not isinstance(v, dict):
+            continue
+        mode = v.get("mode")
+        label = v.get("label")
+        if (
+            not isinstance(mode, str)
+            or mode not in _VALID_MANUAL_ACTIVITY_MODES
+            or not isinstance(label, str)
+        ):
+            continue
+        cleaned[k.lower()] = {"mode": mode, "label": label}
+    return cleaned
+
+
+def load_manual_activity_overrides() -> dict:
+    if not os.path.exists(MANUAL_ACTIVITY_OVERRIDES_FILE):
+        return {}
+    try:
+        with open(MANUAL_ACTIVITY_OVERRIDES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return validate_manual_activity_overrides_dict(data)
+    except (json.JSONDecodeError, IOError, OSError, TypeError):
+        return {}
+
+
+def save_manual_activity_overrides(overrides: dict) -> None:
+    validated = validate_manual_activity_overrides_dict(overrides)
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(MANUAL_ACTIVITY_OVERRIDES_FILE, "w", encoding="utf-8") as f:
+        json.dump(validated, f, indent=2)
+        f.write("\n")
+
+
 def load_state():
     state = AppState()
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r") as f:
-                state.from_dict(json.load(f))
-        except (json.JSONDecodeError, IOError):
-            pass
+    if not os.path.exists(STATE_FILE):
+        return state
+
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return state
+    except (json.JSONDecodeError, IOError, UnicodeError):
+        return state
+
+    legacy = data.pop("manual_activity_overrides", None)
+
+    try:
+        state.from_dict(data)
+    except (TypeError, ValueError, AttributeError):
+        return state
+
+    if legacy is not None:
+        if isinstance(legacy, dict):
+            migrated = validate_manual_activity_overrides_dict(legacy)
+            if migrated:
+                current = load_manual_activity_overrides()
+                merged = {**migrated, **current}
+                save_manual_activity_overrides(merged)
+        save_state(state)
+
     return state
 
 
@@ -133,9 +194,7 @@ def reset_state_to_default():
         }
     )
     save_set_minutes(0.0)
-    # Signal running monitor to reload state from disk on next poll
-    with open(RELOAD_STATE_FLAG, "w"):
-        pass
+    signal_state_reload()
 
 
 def check_and_clear_reload_flag():
@@ -146,6 +205,13 @@ def check_and_clear_reload_flag():
             pass
         return True
     return False
+
+
+def signal_state_reload():
+    """Ask a running monitor to reload state from disk on the next poll."""
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(RELOAD_STATE_FLAG, "w"):
+        pass
 
 
 # --- extra.json ---

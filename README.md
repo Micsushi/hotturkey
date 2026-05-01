@@ -22,9 +22,9 @@ Each level shows a full-screen red warning until dismissed.
 
 ## What It Tracks
 
-- **Steam games**: Any focused process under Steam. Child processes are scanned periodically.
-- **Tracked sites**: YouTube, etc. in Brave / Chrome / Firefox / Edge when the tab is the active window. Configure in `config.py`.
-- **Bonus sites**: Sites like LeetCode that give extra recovery rate (adjustable).
+- **Steam games**: Any focused process under Steam. Child processes are scanned periodically. Publisher launchers sometimes need the exe basename in `%USERPROFILE%\.hotturkey\tracked_targets.json` (`known_game_executables`) or Steam env detection when accessible.
+- **Tracked sites**: YouTube-style entertainment when the matching browser/tab title is detected. Keywords and browser name substrings live in `tracked_targets.json` (copied from defaults on first run).
+- **Bonus sites**: Faster budget recovery rate for configured title keywords (`tracked_targets.json`).
 
 ---
 

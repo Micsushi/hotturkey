@@ -4,7 +4,7 @@ from datetime import date
 # Configurable values
 
 # Total daily play budget in seconds (default: 3 hour).
-MAX_PLAY_BUDGET = 3600*3
+MAX_PLAY_BUDGET = 3600 * 3
 # Max extra minutes that can be granted via CLI per day.
 MAX_EXTRA_MINUTES_PER_DAY = 60
 # Days of the week that get bonus extra-time cap (double). Monday=0, Sunday=6.
@@ -31,26 +31,6 @@ BONUS_RECOVERY_MULTIPLIER = 2.0
 BONUS_APPS_RECOVERY_MULTIPLIER = 1.5
 # Social media consumes budget more slowly than games/videos (0.5 = half speed).
 SOCIAL_CONSUME_RATIO = 0.5
-
-# Browser / app detection
-TRACKED_BROWSERS = ["brave", "chrome", "firefox", "edge"]
-TRACKED_SITES = [
-    "youtube",
-    "watchseries",
-    "hianime",
-    "twitch",
-    "reddit",
-    "netflix",
-    "9anime",
-    "9animetv",
-    # Some watch sites (e.g. watchseries.mn) don't include the brand/domain
-    # in the browser tab title, but do include "HD free".
-    "hd free",
-    "gogoanime",
-]
-BONUS_SITES = ["kwiziq", "leetcode", "github"]
-BONUS_APPS = ["cursor", "vscode", "visual studio code", "terminal", "command prompt", "zed", "antigravity"]
-SOCIAL_APPS_OR_SITES = ["whatsapp", "discord"]
 
 
 def get_effective_max_extra_minutes_per_day(day=None):
@@ -79,6 +59,12 @@ def get_effective_max_extra_minutes_per_day(day=None):
 # works no matter where you run the program from.
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".hotturkey")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
+# CLI `focus set` / Hand-edit OK: monitor reloads contents every poll cycle.
+MANUAL_ACTIVITY_OVERRIDES_FILE = os.path.join(
+    STATE_DIR, "manual_activity_overrides.json"
+)
+# Substrings for window titles and known-game exe basenames (bundled defaults copied once).
+TRACKED_TARGETS_FILE = os.path.join(STATE_DIR, "tracked_targets.json")
 HISTORY_DB = os.path.join(STATE_DIR, "history.db")
 LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
 
@@ -87,12 +73,6 @@ LOG_FILE = os.path.join(STATE_DIR, "hotturkey.log")
 LOG_LEVEL_FILE = os.path.join(STATE_DIR, "loglevel.txt")
 
 STEAM_PROCESS_NAME = "steam.exe"
-
-# Exe names (lowercase) that are always counted as gaming, regardless of Steam
-# ancestry. Use this for games that launch through a non-Steam intermediary
-# (e.g. a publisher launcher that breaks the process parent chain).
-# Example: publisher clients that detach from Steam: Arc Raiders runs as Pioneergame.exe
-KNOWN_GAME_EXECUTABLES: set = {"pioneergame.exe"}
 
 STEAM_HELPER_PROCESS_NAMES = {
     "steam.exe",

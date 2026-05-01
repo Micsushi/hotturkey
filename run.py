@@ -87,11 +87,11 @@ def _monitor_loop_inner():
         # check for log level change command
         refresh_log_level_from_disk()
 
-        # check for reset command
+        # reload state.json (budget commands, overrides, etc.)
         if check_and_clear_reload_flag():
             state = load_state()
             _reset_session_state(state)
-            log.info("[COMMAND] reset: state to default.")
+            log.info("[COMMAND] state reloaded from disk.")
             _log_start_snapshot(state, event="reloaded")
 
         # detect current activity and update budget/overtime

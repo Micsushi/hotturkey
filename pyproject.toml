@@ -31,7 +31,7 @@ where = ["."]
 include = ["hotturkey*"]
 
 [tool.setuptools.package-data]
-hotturkey = ["ascii_art/*.txt", "popup_messages/*.txt"]
+hotturkey = ["ascii_art/*.txt", "popup_messages/*.txt", "default_tracked_targets.json"]
 
 [tool.pylint.main]
 load-plugins = []

@@ -23,11 +23,17 @@ _orig_state_file = config.STATE_FILE
 
 config.STATE_DIR = _tmp
 config.STATE_FILE = os.path.join(_tmp, "state.json")
+config.MANUAL_ACTIVITY_OVERRIDES_FILE = os.path.join(
+    _tmp, "manual_activity_overrides.json"
+)
+config.TRACKED_TARGETS_FILE = os.path.join(_tmp, "tracked_targets.json")
 
 from hotturkey.state import (
     AppState,
     save_state,
     load_state,
+    save_manual_activity_overrides,
+    load_manual_activity_overrides,
     save_extra_minutes_pending,
     load_extra_minutes_pending,
     save_set_minutes,
@@ -229,3 +235,68 @@ def test_state_save_load_round_trip():
     assert loaded.remaining_budget_seconds == pytest.approx(1234.5)
     assert loaded.overtime_seconds == pytest.approx(67.8)
     assert loaded.overtime_escalation_level == 2
+
+
+def test_manual_activity_overrides_sidecar_validates_modes():
+    save_manual_activity_overrides(
+        {
+            "good.exe": {"mode": "consume", "label": "Steam: Good"},
+            "junk": {"mode": "not_a_mode", "label": "no"},
+        }
+    )
+    assert load_manual_activity_overrides() == {
+        "good.exe": {"mode": "consume", "label": "Steam: Good"}
+    }
+
+
+def test_load_state_migrates_legacy_embedded_overrides_to_sidecar():
+    import json
+
+    base = AppState()
+    save_state(base)
+    with open(config.STATE_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    data["manual_activity_overrides"] = {
+        "legacy.exe": {"mode": "social", "label": "Manual social: Legacy"},
+        "bad": {"mode": "bogus", "label": "x"},
+    }
+    with open(config.STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    load_state()
+
+    assert load_manual_activity_overrides() == {
+        "legacy.exe": {"mode": "social", "label": "Manual social: Legacy"}
+    }
+    with open(config.STATE_FILE, encoding="utf-8") as f:
+        refreshed = json.load(f)
+    assert "manual_activity_overrides" not in refreshed
+
+
+def test_migration_merged_overrides_prefers_existing_sidecar_entries():
+    import json
+
+    save_manual_activity_overrides(
+        {
+            "overlap.exe": {
+                "mode": "bonus",
+                "label": "Manual bonus site: disk",
+            }
+        }
+    )
+    base = AppState()
+    save_state(base)
+    with open(config.STATE_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    data["manual_activity_overrides"] = {
+        "overlap.exe": {"mode": "consume", "label": "Steam: from state legacy"},
+        "only_legacy.exe": {"mode": "social", "label": "Manual social: legacy"},
+    }
+    with open(config.STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    load_state()
+
+    ovr = load_manual_activity_overrides()
+    assert ovr["overlap.exe"]["mode"] == "bonus"
+    assert ovr["only_legacy.exe"]["mode"] == "social"

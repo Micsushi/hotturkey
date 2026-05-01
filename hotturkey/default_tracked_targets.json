@@ -1,0 +1,42 @@
+{
+  "_about": "User-editable copy lives in ~/.hotturkey/tracked_targets.json. Keywords match window titles (substring, case-insensitive). Exe entries are lowercase basenames.",
+  "browsers": [
+    "brave",
+    "chrome",
+    "firefox",
+    "edge"
+  ],
+  "tracked_sites": [
+    "youtube",
+    "watchseries",
+    "hianime",
+    "twitch",
+    "reddit",
+    "netflix",
+    "9anime",
+    "9animetv",
+    "hd free",
+    "gogoanime"
+  ],
+  "bonus_sites": [
+    "kwiziq",
+    "leetcode",
+    "github"
+  ],
+  "bonus_apps": [
+    "cursor",
+    "vscode",
+    "visual studio code",
+    "terminal",
+    "command prompt",
+    "zed",
+    "antigravity"
+  ],
+  "social_apps_or_sites": [
+    "whatsapp",
+    "discord"
+  ],
+  "known_game_executables": [
+    "pioneergame.exe"
+  ]
+}

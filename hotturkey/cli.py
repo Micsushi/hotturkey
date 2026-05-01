@@ -1,15 +1,20 @@
 # cli commands for the user to use
 
 import argparse
+import json
 import os
 import sys
+import time
 import win32event
+
+import psutil
 
 from hotturkey.config import (
     MAX_PLAY_BUDGET,
     get_effective_max_extra_minutes_per_day,
     STATE_DIR,
     LOG_LEVEL_FILE,
+    MANUAL_ACTIVITY_OVERRIDES_FILE,
 )
 from hotturkey.db import (
     clear_all_sessions,
@@ -27,9 +32,16 @@ from hotturkey.state import (
     reset_state_to_default,
     apply_extra_seconds,
     gather_status_fields,
+    signal_state_reload,
+    load_manual_activity_overrides,
+    save_manual_activity_overrides,
 )
 from hotturkey.utils import format_duration
-from hotturkey.monitor import foreground_diagnostics_report
+from hotturkey.monitor import (
+    foreground_diagnostics_report,
+    get_foreground_window_info,
+)
+from hotturkey.window_enum import list_visible_top_level_windows, title_for_pid
 from . import runner
 
 
@@ -386,13 +398,244 @@ def _print_chart(rows):
     print()
 
 
-def handle_focus():
-    """Print foreground PID, exe, window title, and how HotTurkey would classify."""
+FOCUS_ASSIGN_CATEGORIES = (
+    "gaming",
+    "entertainment",
+    "bonus",
+    "bonus_app",
+    "social",
+)
+
+
+def manual_category_to_mode_label(category: str, exe_display: str, title_hint: str):
+    hint = (title_hint or "").strip()
+    clipped = hint[:72] + ("..." if len(hint) > 72 else "") if hint else ""
+
+    if category == "gaming":
+        return "consume", f"Steam: {exe_display}"
+    if category == "entertainment":
+        if clipped:
+            return "consume", f"Manual watch: {clipped}"
+        return "consume", f"Manual watch: {exe_display}"
+    if category == "bonus":
+        slug = clipped or exe_display
+        return "bonus", f"Manual bonus site: {slug}"
+    if category == "bonus_app":
+        slug = clipped or exe_display
+        return "bonus_app", f"Manual bonus app: {slug}"
+    if category == "social":
+        slug = clipped or exe_display
+        return "social", f"Manual social: {slug}"
+    raise ValueError(f"unknown category {category!r}")
+
+
+def _normalize_exe_lookup_name(raw: str) -> str:
+    s = raw.strip().lower()
+    if not s:
+        raise ValueError("empty exe name")
+    return s if s.endswith(".exe") else f"{s}.exe"
+
+
+def _resolve_clear_exe_key(target: str) -> str:
+    raw = target.strip()
+    if not raw:
+        raise ValueError("empty target")
+    if raw.isdigit():
+        pid = int(raw)
+        return psutil.Process(pid).name().lower()
+    return _normalize_exe_lookup_name(raw)
+
+
+def _pids_matching_exe(exe_key_lc: str) -> list[tuple[int, str]]:
+    found: list[tuple[int, str]] = []
+    for proc in psutil.process_iter(["pid", "name"]):
+        name = proc.info.get("name") or ""
+        if not name:
+            continue
+        if name.lower() == exe_key_lc:
+            pid = proc.info.get("pid")
+            if pid is not None:
+                found.append((int(pid), name))
+    return found
+
+
+def resolve_focus_set_target(target: str) -> tuple[int, str]:
+    """Return (pid, exe basename) for `focus set`. Prefers foreground if multiple."""
+    raw = target.strip()
+    if not raw:
+        raise ValueError("empty target")
+
+    if raw.isdigit():
+        pid = int(raw)
+        proc = psutil.Process(pid)
+        return pid, proc.name()
+
+    exe_key = _normalize_exe_lookup_name(raw)
+    matches = _pids_matching_exe(exe_key)
+    if not matches:
+        raise ValueError(f"no running process with image name {exe_key!r}")
+
+    if len(matches) == 1:
+        return matches[0]
+
+    fg_pid, _ = get_foreground_window_info()
+    for pid, name in matches:
+        if pid == fg_pid:
+            return pid, name
+
+    pids = ", ".join(str(pid) for pid, _ in matches[:8])
+    if len(matches) > 8:
+        pids += ", ..."
+    print(
+        f"focus set: multiple {exe_key} (PIDs {pids}); "
+        "foreground is not one of them, using first match. Pass a PID if wrong.",
+        file=sys.stderr,
+    )
+    return matches[0]
+
+
+def _terminal_safe_text(text: str) -> str:
+    enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        return text.encode(enc, errors="replace").decode(enc)
+    except (LookupError, UnicodeError):
+        return text.encode("utf-8", errors="replace").decode("ascii", errors="replace")
+
+
+def _effective_focus_snapshot_wait(wait_arg) -> float:
+    """Interactive default: pause so foreground is not this terminal."""
+    if wait_arg is not None:
+        return max(0.0, float(wait_arg))
+    return 3.0 if sys.stdin.isatty() else 0.0
+
+
+def handle_focus_blank(wait_arg=None):
+    """Print foreground snapshot (no subcommand). Does not persist anything."""
+    w = _effective_focus_snapshot_wait(wait_arg)
+    if w > 0:
+        print(
+            "focus: switch to the window you want sampled (otherwise you get this "
+            f"terminal or IDE). Waiting {w:.1f}s...",
+            file=sys.stderr,
+        )
+        try:
+            time.sleep(w)
+        except KeyboardInterrupt:
+            print("\nfocus: aborted.", file=sys.stderr)
+            raise SystemExit(130) from None
+
     state = load_state()
     report = foreground_diagnostics_report(state)
     print()
     print(report)
     print()
+
+
+def handle_focus_list(include_blank_titles):
+    rows = list_visible_top_level_windows(include_blank_titles=include_blank_titles)
+    if not rows:
+        print("\nNo visible top-level windows matched (try --blank?).\n")
+        return
+
+    pid_w = max(len("PID"), max(len(str(r.pid)) for r in rows))
+    exe_w = max(len("Exe"), max(len(r.exe_basename) for r in rows))
+    exe_w = min(max(exe_w, 12), 36)
+
+    def clip_cell(s: str, w: int) -> str:
+        if len(s) <= w:
+            return s.ljust(w)
+        return (s[: w - 3] + "...").ljust(w)
+
+    print(
+        "\nVisible top-level windows (`focus set` accepts PID or exe name; stored by exe)."
+    )
+    print(_terminal_safe_text(f"{'PID':>{pid_w}}  {'Exe'.ljust(exe_w)}  Title"))
+    print(_terminal_safe_text(f"{'-' * pid_w}  {'-' * exe_w}  {'-' * 52}"))
+    for r in rows:
+        et = clip_cell(r.exe_basename, exe_w)
+        title_display = r.title.replace("\r", " ").replace("\n", " ")
+        if len(title_display) > 52:
+            title_display = title_display[:49] + "..."
+        line = f"{r.pid:>{pid_w}}  {et}  {title_display}"
+        print(_terminal_safe_text(line))
+    print()
+
+
+def handle_focus_overrides_display():
+    ovr = load_manual_activity_overrides()
+    print()
+    print(f"manual_activity_overrides.json ({MANUAL_ACTIVITY_OVERRIDES_FILE}):")
+    if not ovr:
+        print("  (no entries; edit JSON or use `ht focus set` / `ht focus clear`)")
+    else:
+        for k in sorted(ovr):
+            print(f"  {k} -> {json.dumps(ovr[k], ensure_ascii=False)}")
+    print()
+
+
+def handle_focus_set(target: str, category: str):
+    try:
+        pid, exe_disp = resolve_focus_set_target(target)
+    except psutil.NoSuchProcess as exc:
+        print(f"\nNo such process: {exc}\n")
+        sys.exit(1)
+    except (psutil.AccessDenied, ValueError) as exc:
+        print(f"\nCannot resolve {target!r}: {exc}\n")
+        sys.exit(1)
+
+    ttl = title_for_pid(pid)
+    mode, lbl = manual_category_to_mode_label(category, exe_disp, ttl)
+    exe_key = exe_disp.lower()
+    ovr = load_manual_activity_overrides()
+    ovr[exe_key] = {"mode": mode, "label": lbl}
+    save_manual_activity_overrides(ovr)
+    signal_state_reload()
+    print()
+    print(
+        f"Set override for exe {exe_key!r} ({mode=} {lbl=}); monitor reload signaled."
+    )
+    print(f"  File: {MANUAL_ACTIVITY_OVERRIDES_FILE}")
+    if not ttl:
+        print("  No window title found for PID: label uses exe basename only.")
+    print()
+
+
+def handle_focus_clear(target: str):
+    try:
+        exe_key = _resolve_clear_exe_key(target)
+    except (ValueError, psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        print(f"\nCannot resolve {target!r}: {exc}\n")
+        sys.exit(1)
+
+    ovr = load_manual_activity_overrides()
+    if exe_key not in ovr:
+        print(f"\nNo override for {exe_key!r}\n")
+        sys.exit(1)
+    del ovr[exe_key]
+    save_manual_activity_overrides(ovr)
+    signal_state_reload()
+    print()
+    print(f"Removed override for {exe_key!r}; monitor reload signaled.")
+    print(f"  File: {MANUAL_ACTIVITY_OVERRIDES_FILE}")
+    print()
+
+
+def handle_focus_dispatch(args):
+    wait_arg = getattr(args, "focus_snapshot_wait", None)
+    fa = getattr(args, "focus_action", None)
+    if fa is None:
+        handle_focus_blank(wait_arg)
+        return
+    if fa == "list":
+        handle_focus_list(bool(getattr(args, "focus_list_blank", False)))
+    elif fa == "overrides":
+        handle_focus_overrides_display()
+    elif fa == "set":
+        handle_focus_set(args.focus_set_target, args.focus_category)
+    elif fa == "clear":
+        handle_focus_clear(args.focus_clear_target)
+    else:
+        handle_focus_blank(wait_arg)
 
 
 def main():
@@ -404,9 +647,65 @@ def main():
 
     subparsers.add_parser("status", help="Show current budget and tracking info")
 
-    subparsers.add_parser(
+    focus_parser = subparsers.add_parser(
         "focus",
-        help="Show foreground exe and classification (focus game window first)",
+        help=(
+            "Foreground snapshot by default; list windows; per-exe category overrides"
+        ),
+    )
+    focus_parser.add_argument(
+        "--wait",
+        type=float,
+        default=None,
+        metavar="SEC",
+        dest="focus_snapshot_wait",
+        help=(
+            "Snapshot only: pause SEC seconds before reading foreground. "
+            "If you omit --wait entirely: waits 3s when stdin is a TTY "
+            "(so you can Alt+Tab away from this terminal); 0 when not TTY."
+        ),
+    )
+    focus_sub = focus_parser.add_subparsers(
+        dest="focus_action", required=False, metavar="ACTION"
+    )
+    p_fl = focus_sub.add_parser(
+        "list",
+        help="Visible root windows: PID, exe, title columns",
+    )
+    p_fl.add_argument(
+        "--blank",
+        action="store_true",
+        dest="focus_list_blank",
+        help="Include windows with empty title",
+    )
+
+    focus_sub.add_parser(
+        "overrides",
+        help="Print manual_activity_overrides.json path and entries",
+    )
+
+    p_fs = focus_sub.add_parser(
+        "set",
+        help="Persist category by PID or exe name (basename key in manual overrides)",
+    )
+    p_fs.add_argument(
+        "focus_set_target",
+        metavar="PID_OR_EXE",
+        help="e.g. 31948, cursor.exe, or Cursor (process must exist if using a name)",
+    )
+    p_fs.add_argument(
+        "focus_category",
+        choices=list(FOCUS_ASSIGN_CATEGORIES),
+        metavar="CATEGORY",
+    )
+
+    p_fc = focus_sub.add_parser(
+        "clear",
+        help="Drop override keyed by basename.exe or resolve PID to basename",
+    )
+    p_fc.add_argument(
+        "focus_clear_target",
+        metavar="EXE_OR_PID",
     )
 
     extra_parser = subparsers.add_parser(
@@ -503,7 +802,7 @@ def main():
     if args.command == "status":
         handle_status()
     elif args.command == "focus":
-        handle_focus()
+        handle_focus_dispatch(args)
     elif args.command == "extra":
         handle_extra(args.minutes)
     elif args.command == "set":

@@ -13,24 +13,19 @@ from datetime import date
 from hotturkey.config import (
     STEAM_PROCESS_NAME,
     STEAM_HELPER_PROCESS_NAMES,
-    KNOWN_GAME_EXECUTABLES,
-    TRACKED_BROWSERS,
-    TRACKED_SITES,
     MAX_PLAY_BUDGET,
     get_effective_max_extra_minutes_per_day,
     BUDGET_RECOVERY_PER_SECOND_RATIO,
     POLL_INTERVAL,
     BUDGET_ELAPSED_GAP_CLAMP_THRESHOLD_SECONDS,
-    BONUS_SITES,
     BONUS_RECOVERY_MULTIPLIER,
-    BONUS_APPS,
     BONUS_APPS_RECOVERY_MULTIPLIER,
     AFK_IDLE_THRESHOLD,
-    SOCIAL_APPS_OR_SITES,
     SOCIAL_CONSUME_RATIO,
 )
 from hotturkey.logger import log, log_event
 from hotturkey.utils import format_duration
+from hotturkey.tracked_targets import get_tracked_targets
 from hotturkey.state import (
     load_extra_minutes_pending,
     save_extra_minutes_pending,
@@ -40,6 +35,8 @@ from hotturkey.state import (
     save_set_minutes,
     apply_extra_seconds,
     overtime_level_from_debt,
+    _VALID_MANUAL_ACTIVITY_MODES,
+    load_manual_activity_overrides,
 )
 
 # Names (lowercase) of executables that are currently detected as Steam descendants.
@@ -82,6 +79,15 @@ def get_foreground_window_info():
     _, pid = win32process.GetWindowThreadProcessId(hwnd)
     title = win32gui.GetWindowText(hwnd)
     return pid, title
+
+
+def foreground_exe_basename_lower(pid: int) -> str:
+    if pid <= 0:
+        return ""
+    try:
+        return psutil.Process(pid).name().lower()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+        return ""
 
 
 def is_steam_ancestor(pid):
@@ -129,9 +135,7 @@ def refresh_known_steam_games(state):
                     continue
 
                 lname = name.lower()
-                if (
-                    lname in STEAM_HELPER_PROCESS_NAMES
-                ):
+                if lname in STEAM_HELPER_PROCESS_NAMES:
                     continue
 
                 current_names.add(lname)
@@ -180,32 +184,31 @@ def has_steam_env(pid: int) -> bool:
     return bool(sid or gid)
 
 
-def detect_steam_game_focused(foreground_pid):
+def detect_steam_game_focused(foreground_pid, known_game_executables):
+    game_name = ""
     if foreground_pid <= 0:
-        return ""
+        return game_name
+
     try:
         proc = psutil.Process(foreground_pid)
         proc_name = proc.name().lower()
     except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return ""
+        return game_name
 
     if proc_name in STEAM_HELPER_PROCESS_NAMES:
-        return ""
+        return game_name
 
-    if proc_name in _KNOWN_STEAM_GAME_NAMES:
-        return proc.name()
+    if (
+        proc_name in _KNOWN_STEAM_GAME_NAMES
+        or proc_name in known_game_executables
+        or is_steam_ancestor(foreground_pid)
+    ):
+        game_name = proc.name()
+    elif has_steam_env(foreground_pid):
+        game_name = proc.name()
+        log_event("GAMING", message=f"detected via Steam env: {game_name}")
 
-    if proc_name in KNOWN_GAME_EXECUTABLES:
-        return proc.name()
-
-    if is_steam_ancestor(foreground_pid):
-        return proc.name()
-
-    if has_steam_env(foreground_pid):
-        log_event("GAMING", message=f"detected via Steam env: {proc.name()}")
-        return proc.name()
-
-    return ""
+    return game_name
 
 
 def parent_process_chain(pid: int, max_levels: int = 14) -> str:
@@ -257,6 +260,9 @@ def foreground_diagnostics_report(state) -> str:
         lines.append(f"(could not inspect process: {exc})")
 
     steam_app_id, steam_game_id, steam_env_status = read_steam_env_for_pid(pid)
+    tt = get_tracked_targets()
+    exe_set = tt["known_game_executables"]
+
     lines.extend(
         [
             "",
@@ -267,8 +273,8 @@ def foreground_diagnostics_report(state) -> str:
             }",
             f"In current Steam descendant set ({len(_KNOWN_STEAM_GAME_NAMES)} exe names): "
             f"{'yes' if pname.lower() in _KNOWN_STEAM_GAME_NAMES else 'no'}",
-            f"In KNOWN_GAME_EXECUTABLES config: "
-            f"{'yes' if pname.lower() in KNOWN_GAME_EXECUTABLES else 'no'}",
+            f"In tracked_targets.json known_game_executables: "
+            f"{'yes' if pname.lower() in exe_set else 'no'}",
             f"Steam env read: status={steam_env_status}"
             + (
                 f", SteamAppId={steam_app_id!r}, SteamGameId={steam_game_id!r}"
@@ -280,11 +286,17 @@ def foreground_diagnostics_report(state) -> str:
     if steam_env_status == "access_denied":
         lines.append(
             "  (HotTurkey cannot read this process environ without elevation; Steam "
-            "env detection will not fire. Add exe to KNOWN_GAME_EXECUTABLES if needed.)"
+            "env detection will not fire. Add exe under known_game_executables in "
+            "tracked_targets.json if needed.)"
         )
 
+    exe_lc = pname.lower() if pname else ""
+    overrides = load_manual_activity_overrides()
+    if exe_lc and exe_lc in overrides:
+        lines.extend(["", f"manual_activity_override: {overrides[exe_lc]!r}"])
+
     if pname:
-        steam_label = detect_steam_game_focused(pid)
+        steam_label = detect_steam_game_focused(pid, exe_set)
         lines.extend(
             [
                 "",
@@ -296,8 +308,8 @@ def foreground_diagnostics_report(state) -> str:
     lines.extend(
         [
             "",
-            "HotTurkey would use (first match wins: bonus sites > bonus apps "
-            "> steam > browser keywords > social):",
+            "HotTurkey would use (first match: manual exe override > bonus sites > "
+            "bonus apps > steam > browser keywords > social):",
             f"  mode={mode!r}",
             f"  label={label!r}",
         ]
@@ -306,11 +318,14 @@ def foreground_diagnostics_report(state) -> str:
 
 
 # Should look into something better than this
-def detect_tracked_site_focused(foreground_title):
+def detect_tracked_site_focused(foreground_title, tracked_sites, tracked_browsers):
     title_lower = foreground_title.lower()
-    for site in TRACKED_SITES:
+    for site in tracked_sites:
         if site in title_lower:
-            browser = next((b for b in TRACKED_BROWSERS if b in title_lower), None)
+            browser = next(
+                (b for b in tracked_browsers if b in title_lower),
+                None,
+            )
             if browser:
                 return f"{site.title()} ({browser.title()})"
             return f"{site.title()}"
@@ -325,42 +340,73 @@ def _match_title_keyword(foreground_title, keywords):
     return ""
 
 
-def detect_bonus_site_focused(foreground_title):
-    return _match_title_keyword(foreground_title, BONUS_SITES)
+def detect_bonus_site_focused(foreground_title, bonus_sites):
+    return _match_title_keyword(foreground_title, bonus_sites)
 
 
-def detect_bonus_app_focused(foreground_title):
-    if not BONUS_APPS:
+def detect_bonus_app_focused(foreground_title, bonus_apps):
+    if not bonus_apps:
         return ""
-    return _match_title_keyword(foreground_title, BONUS_APPS)
+    return _match_title_keyword(foreground_title, bonus_apps)
 
 
-def detect_social_focused(foreground_title):
-    return _match_title_keyword(foreground_title, SOCIAL_APPS_OR_SITES)
+def detect_social_focused(foreground_title, social_keywords):
+    return _match_title_keyword(foreground_title, social_keywords)
 
 
 def detect_tracked_activity():
     foreground_pid, foreground_title = get_foreground_window_info()
+    tt = get_tracked_targets()
 
-    bonus_label = detect_bonus_site_focused(foreground_title)
-    if bonus_label:
-        return "bonus", bonus_label
+    mode = ""
+    label = ""
 
-    bonus_app_label = detect_bonus_app_focused(foreground_title)
-    if bonus_app_label:
-        return "bonus_app", bonus_app_label
+    exe_key = foreground_exe_basename_lower(foreground_pid)
+    if exe_key:
+        ovr = load_manual_activity_overrides()
+        row = ovr.get(exe_key)
+        if isinstance(row, dict):
+            override_mode = row.get("mode")
+            override_label = row.get("label")
+            if override_mode in _VALID_MANUAL_ACTIVITY_MODES and isinstance(
+                override_label, str
+            ):
+                mode = override_mode
+                label = override_label
 
-    steam_game_name = detect_steam_game_focused(foreground_pid)
-    if steam_game_name:
-        return "consume", f"Steam: {steam_game_name}"
+    if not label:
+        mode = "bonus"
+        label = detect_bonus_site_focused(foreground_title, tt["bonus_sites"])
 
-    browser_match = detect_tracked_site_focused(foreground_title)
-    if browser_match:
-        return "consume", browser_match
+    if not label:
+        mode = "bonus_app"
+        label = detect_bonus_app_focused(foreground_title, tt["bonus_apps"])
 
-    social_label = detect_social_focused(foreground_title)
-    if social_label:
-        return "social", social_label
+    if not label:
+        steam_game_name = detect_steam_game_focused(
+            foreground_pid, tt["known_game_executables"]
+        )
+        if steam_game_name:
+            mode = "consume"
+            label = f"Steam: {steam_game_name}"
+
+    if not label:
+        mode = "consume"
+        label = detect_tracked_site_focused(
+            foreground_title,
+            tt["tracked_sites"],
+            tt["browsers"],
+        )
+
+    if not label:
+        mode = "social"
+        label = detect_social_focused(
+            foreground_title,
+            tt["social_apps_or_sites"],
+        )
+
+    if label:
+        return mode, label
 
     log.debug("[IDLE] status=no_activity")
     return "idle", ""

@@ -3,8 +3,8 @@ from datetime import date
 
 # Configurable values
 
-# Total daily play budget in seconds (default: 3 hour).
-MAX_PLAY_BUDGET = 3600 * 3
+# Total daily play budget in seconds (default: 2 hour).
+MAX_PLAY_BUDGET = 3600 * 2
 # Max extra minutes that can be granted via CLI per day.
 MAX_EXTRA_MINUTES_PER_DAY = 60
 # Days of the week that get bonus extra-time cap (double). Monday=0, Sunday=6.

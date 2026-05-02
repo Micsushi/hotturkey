@@ -268,9 +268,7 @@ def foreground_diagnostics_report(state) -> str:
             "",
             f"Parent chain: {parent_process_chain(pid)}",
             "",
-            f"Steam ancestry (walk parents for steam.exe): {
-                'yes' if is_steam_ancestor(pid) else 'no'
-            }",
+            f"Steam ancestry (walk parents for steam.exe): {'yes' if is_steam_ancestor(pid) else 'no'}",
             f"In current Steam descendant set ({len(_KNOWN_STEAM_GAME_NAMES)} exe names): "
             f"{'yes' if pname.lower() in _KNOWN_STEAM_GAME_NAMES else 'no'}",
             f"In tracked_targets.json known_game_executables: "

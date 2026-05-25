@@ -12,9 +12,12 @@ MAX_EXTRA_MINUTES_PER_DAY = 60
 EXTRA_TIME_BONUS_DAYS = (4, 5, 6)
 EXTRA_TIME_BONUS_DAY_MULTIPLIER = 2.0
 # Fraction of a second recovered per idle/bonus second (0.5 = 1s idle -> 0.5s back).
-BUDGET_RECOVERY_PER_SECOND_RATIO = 0.5
+BUDGET_RECOVERY_PER_SECOND_RATIO = 0.75
 # Seconds between monitor polls.
 POLL_INTERVAL = 10
+# Seconds between installed game catalog refreshes. Foreground checks use the
+# in-memory catalog, so this can stay much slower than the poll interval.
+GAME_CATALOG_REFRESH_INTERVAL_SECONDS = 300.0
 # If the process did not run for longer than this (sleep, suspend, hang), only one
 # POLL_INTERVAL of wall time is applied to budget consume/recovery on the next tick.
 # Prevents a huge credit after AFK + resume when polls were not running.
@@ -22,13 +25,13 @@ BUDGET_ELAPSED_GAP_CLAMP_THRESHOLD_SECONDS = 60.0
 # Seconds of no input before we treat the user as AFK.
 AFK_IDLE_THRESHOLD = 300
 # Each overtime popup level comes faster by this factor (0.5 = halves each time: 30, 15, 7.5...).
-OVERTIME_INTERVAL_DECAY_FACTOR = 0.5
+OVERTIME_INTERVAL_DECAY_FACTOR = 0.25
 # Minimum interval between overtime popups in seconds (never faster than this).
 OVERTIME_MIN_INTERVAL_SECONDS = 60
 # How much faster budget recovers on bonus sites vs normal idle (3x here).
 BONUS_RECOVERY_MULTIPLIER = 2.0
 # Good desktop apps that earn bonus time (e.g. coding, study tools) recover more slowly.
-BONUS_APPS_RECOVERY_MULTIPLIER = 1.5
+BONUS_APPS_RECOVERY_MULTIPLIER = 1.33333333333333
 # Social media consumes budget more slowly than games/videos (0.5 = half speed).
 SOCIAL_CONSUME_RATIO = 0.5
 

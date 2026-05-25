@@ -13,6 +13,7 @@ from datetime import date
 from hotturkey.config import (
     STEAM_PROCESS_NAME,
     STEAM_HELPER_PROCESS_NAMES,
+    GAME_CATALOG_REFRESH_INTERVAL_SECONDS,
     MAX_PLAY_BUDGET,
     get_effective_max_extra_minutes_per_day,
     BUDGET_RECOVERY_PER_SECOND_RATIO,
@@ -23,6 +24,7 @@ from hotturkey.config import (
     AFK_IDLE_THRESHOLD,
     SOCIAL_CONSUME_RATIO,
 )
+from hotturkey.game_catalog import find_game_for_exe_path, scan_installed_games
 from hotturkey.logger import log, log_event
 from hotturkey.utils import format_duration
 from hotturkey.tracked_targets import get_tracked_targets
@@ -49,6 +51,9 @@ _last_focused_activity = None
 _steam_known_initialized = False
 _STEAM_REFRESH_INTERVAL_SECONDS = 5.0
 _last_steam_refresh_time = 0.0
+_GAME_CATALOG = []
+_last_game_catalog_refresh_time = 0.0
+_GAME_CATALOG_SOURCES = frozenset({"Steam", "Epic", "Legendary"})
 
 
 # --- activity detection ---
@@ -88,6 +93,11 @@ def foreground_exe_basename_lower(pid: int) -> str:
         return psutil.Process(pid).name().lower()
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
         return ""
+
+
+def is_game_activity_label(label: str) -> bool:
+    prefix = label.split(":", 1)[0]
+    return prefix in _GAME_CATALOG_SOURCES
 
 
 def is_steam_ancestor(pid):
@@ -211,6 +221,65 @@ def detect_steam_game_focused(foreground_pid, known_game_executables):
     return game_name
 
 
+def refresh_game_catalog(force: bool = False):
+    global _GAME_CATALOG, _last_game_catalog_refresh_time
+    now = time.time()
+    if (
+        not force
+        and _GAME_CATALOG
+        and (now - _last_game_catalog_refresh_time)
+        < GAME_CATALOG_REFRESH_INTERVAL_SECONDS
+    ):
+        return _GAME_CATALOG
+
+    try:
+        _GAME_CATALOG = scan_installed_games()
+        _last_game_catalog_refresh_time = now
+        if _GAME_CATALOG:
+            source_counts = {}
+            for game in _GAME_CATALOG:
+                source_counts[game.source] = source_counts.get(game.source, 0) + 1
+            summary = ", ".join(
+                f"{source}={count}" for source, count in sorted(source_counts.items())
+            )
+            log_event("GAMING", message=f"catalog refreshed: {summary}")
+    except (OSError, ValueError, TypeError) as exc:
+        log.debug("[GAMING] catalog refresh failed: %s", exc)
+
+    return _GAME_CATALOG
+
+
+def _foreground_exe_path(pid: int) -> str:
+    if pid <= 0:
+        return ""
+    try:
+        return psutil.Process(pid).exe()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.Error):
+        return ""
+
+
+def detect_catalog_game_focused(foreground_pid):
+    if foreground_pid <= 0:
+        return ""
+
+    try:
+        proc = psutil.Process(foreground_pid)
+        proc_name = proc.name()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return ""
+
+    if proc_name.lower() in STEAM_HELPER_PROCESS_NAMES:
+        return ""
+
+    catalog = refresh_game_catalog()
+    exe_path = _foreground_exe_path(foreground_pid) or proc_name
+    game = find_game_for_exe_path(exe_path, catalog)
+    if not game:
+        return ""
+
+    return f"{game.source}: {game.name}"
+
+
 def parent_process_chain(pid: int, max_levels: int = 14) -> str:
     """Foreground process left, oldest ancestor right."""
     if pid <= 0:
@@ -234,6 +303,7 @@ def parent_process_chain(pid: int, max_levels: int = 14) -> str:
 def foreground_diagnostics_report(state) -> str:
     """One-shot snapshot for debugging classify-miss issues. Refreshes Steam child set."""
     refresh_known_steam_games(state)
+    refresh_game_catalog(force=True)
     pid, title = get_foreground_window_info()
     lines = [
         "HotTurkey foreground snapshot (focus target window)",
@@ -294,10 +364,12 @@ def foreground_diagnostics_report(state) -> str:
         lines.extend(["", f"manual_activity_override: {overrides[exe_lc]!r}"])
 
     if pname:
+        catalog_label = detect_catalog_game_focused(pid)
         steam_label = detect_steam_game_focused(pid, exe_set)
         lines.extend(
             [
                 "",
+                f"detect_catalog_game_focused: {catalog_label or '(empty)'}",
                 f"detect_steam_game_focused: {steam_label or '(empty)'}",
             ]
         )
@@ -307,7 +379,7 @@ def foreground_diagnostics_report(state) -> str:
         [
             "",
             "HotTurkey would use (first match: manual exe override > bonus sites > "
-            "bonus apps > steam > browser keywords > social):",
+            "bonus apps > game catalog > steam > browser keywords > social):",
             f"  mode={mode!r}",
             f"  label={label!r}",
         ]
@@ -379,6 +451,11 @@ def detect_tracked_activity():
     if not label:
         mode = "bonus_app"
         label = detect_bonus_app_focused(foreground_title, tt["bonus_apps"])
+
+    if not label:
+        label = detect_catalog_game_focused(foreground_pid)
+        if label:
+            mode = "consume"
 
     if not label:
         steam_game_name = detect_steam_game_focused(
@@ -469,7 +546,7 @@ def _add_session_time_to_daily_totals(state, seconds_used: float) -> None:
     mode = getattr(state, "current_session_mode", "")
     if mode == "consume":
         label = getattr(state, "tracked_activity_name", "") or ""
-        if label.startswith("Steam:"):
+        if is_game_activity_label(label):
             state.gaming_seconds_today = getattr(
                 state, "gaming_seconds_today", 0.0
             ) + float(seconds_used)
@@ -746,6 +823,15 @@ def _maybe_refresh_steam(state, now):
         _last_steam_refresh_time = time.time()
 
 
+def _maybe_refresh_game_catalog(now):
+    if (
+        not _GAME_CATALOG
+        or (now - _last_game_catalog_refresh_time)
+        >= GAME_CATALOG_REFRESH_INTERVAL_SECONDS
+    ):
+        refresh_game_catalog(force=True)
+
+
 def _log_focus_change(mode, source_name):
     global _last_focused_activity
     if mode == "idle":
@@ -759,10 +845,8 @@ def _log_focus_change(mode, source_name):
         elif mode == "bonus_app":
             log_event("BONUS", message=f"app: {source_name} focused")
         elif mode == "consume":
-            if source_name.startswith("Steam:"):
-                log_event(
-                    "GAMING", message=f"{source_name.replace('Steam: ', '')} focused"
-                )
+            if is_game_activity_label(source_name):
+                log_event("GAMING", message=f"{source_name} focused")
             else:
                 log_event("WATCHING", message=f"{source_name} focused")
         elif mode == "social":
@@ -771,10 +855,9 @@ def _log_focus_change(mode, source_name):
 
 def _apply_mode_budget(state, mode, source_name, is_afk, now, elapsed_seconds):
     if mode == "consume":
-        is_steam_session = source_name.startswith("Steam:")
-        if is_afk and is_steam_session:
+        if is_afk and is_game_activity_label(source_name):
             _update_tracked_session(state, source_name, "consume", now, 0)
-            log.debug("[IDLE] event=afk_steam_freezing_budget")
+            log.debug("[IDLE] event=afk_game_freezing_budget")
         else:
             _update_tracked_session(state, source_name, "consume", now, elapsed_seconds)
             consume_budget(state, elapsed_seconds)
@@ -815,6 +898,7 @@ def update_budget(state):
     _init_steam_games(state)
     is_afk = _update_afk_state()
     _maybe_refresh_steam(state, now)
+    _maybe_refresh_game_catalog(now)
 
     mode, source_name = detect_tracked_activity()
     _log_focus_change(mode, source_name)

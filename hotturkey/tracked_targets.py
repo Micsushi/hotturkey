@@ -1,4 +1,5 @@
 # User-editable keyword lists and known-game exe names (~/.hotturkey/tracked_targets.json).
+# Committed sample defaults live beside this module as tracked_targets.sample.json.
 
 from __future__ import annotations
 
@@ -17,9 +18,9 @@ LIST_KEYS = (
     "social_apps_or_sites",
 )
 
-_PACKAGED_DEFAULT = os.path.join(
+_PACKAGED_SAMPLE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "default_tracked_targets.json",
+    "tracked_targets.sample.json",
 )
 
 _META_PREFIX = "_"
@@ -79,20 +80,20 @@ def _parse_from_flat_raw(raw: dict) -> dict:
     return out
 
 
-def _defaults_from_packaged() -> dict:
-    if not os.path.isfile(_PACKAGED_DEFAULT):
+def _defaults_from_packaged_sample() -> dict:
+    if not os.path.isfile(_PACKAGED_SAMPLE):
         return _parse_from_flat_raw({})
-    raw = _strip_meta(_read_json(_PACKAGED_DEFAULT))
+    raw = _strip_meta(_read_json(_PACKAGED_SAMPLE))
     return _parse_from_flat_raw(raw)
 
 
 def _install_user_defaults() -> None:
     os.makedirs(config.STATE_DIR, exist_ok=True)
-    if os.path.isfile(_PACKAGED_DEFAULT):
-        shutil.copy2(_PACKAGED_DEFAULT, config.TRACKED_TARGETS_FILE)
+    if os.path.isfile(_PACKAGED_SAMPLE):
+        shutil.copy2(_PACKAGED_SAMPLE, config.TRACKED_TARGETS_FILE)
         return
     minimal = {
-        "_about": "edit lists; see README or default_tracked_targets.json in repo"
+        "_about": "edit lists; see README or tracked_targets.sample.json in repo"
     }
     for key in LIST_KEYS:
         minimal[key] = []
@@ -125,7 +126,7 @@ def load_tracked_targets_from_disk(*, ensure_file: bool = True) -> dict:
     if ensure_file and not os.path.isfile(config.TRACKED_TARGETS_FILE):
         _install_user_defaults()
 
-    defaults = _defaults_from_packaged()
+    defaults = _defaults_from_packaged_sample()
     blob = _strip_meta(_read_json(config.TRACKED_TARGETS_FILE))
 
     if not blob and not defaults:

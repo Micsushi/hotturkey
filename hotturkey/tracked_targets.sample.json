@@ -1,5 +1,5 @@
 {
-  "_about": "User-editable copy lives in ~/.hotturkey/tracked_targets.json. Keywords match window titles (substring, case-insensitive). Exe entries are lowercase basenames.",
+  "_about": "Sample tracked target config. HotTurkey uses the user's tracked_targets.json when present. Keywords match window titles as case-insensitive substrings. Exe entries are basenames.",
   "browsers": [
     "brave",
     "chrome",

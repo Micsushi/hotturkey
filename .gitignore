@@ -12,6 +12,7 @@ env/
 venv/
 *.log
 .hotturkey/
+tracked_targets.json
 
 # Local agent context (private, not for repo)
 CLAUDE.md

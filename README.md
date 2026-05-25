@@ -22,9 +22,10 @@ Each level shows a full-screen red warning until dismissed.
 
 ## What It Tracks
 
-- **Steam games**: Any focused process under Steam. Child processes are scanned periodically. Publisher launchers sometimes need the exe basename in `%USERPROFILE%\.hotturkey\tracked_targets.json` (`known_game_executables`) or Steam env detection when accessible.
-- **Tracked sites**: YouTube-style entertainment when the matching browser/tab title is detected. Keywords and browser name substrings live in `tracked_targets.json` (copied from defaults on first run).
-- **Bonus sites**: Faster budget recovery rate for configured title keywords (`tracked_targets.json`).
+- **Installed PC games**: HotTurkey builds a local game catalog from Steam app manifests, Epic Games Launcher manifests, and Legendary/Heroic's Epic install database. Each poll checks the focused process path against known game install folders, so generic exe names like `PioneerGame.exe` can still count as the right game.
+- **Steam runtime fallback**: Steam child processes and Steam env vars are still checked for launcher handoff cases. Publisher launchers or protected anti-cheat processes may still need the exe basename in `%USERPROFILE%\.hotturkey\tracked_targets.json` (`known_game_executables`) or a manual `ht focus set` override.
+- **Tracked sites**: YouTube-style entertainment when the matching browser/tab title is detected. Keywords and browser name substrings live in `%USERPROFILE%\.hotturkey\tracked_targets.json`, created from `hotturkey\tracked_targets.sample.json` on first run.
+- **Bonus sites and apps**: Faster budget recovery rate for configured title keywords in the same local tracked targets file.
 
 ---
 
@@ -115,6 +116,89 @@ The icon changes color as budget drops: green → yellow → orange → red. Hov
 
 ---
 
+## Auto-Start and 30-Minute Auto-Restart
+
+HotTurkey can also be started by a Windows Task Scheduler task that runs every
+30 minutes. The task calls a silent VBS launcher, which calls a PowerShell
+"start if needed" script. If HotTurkey is already running, the script exits.
+If it is not running, the script starts `run.py` in the background.
+
+The local task name used on this machine is `Ht start`.
+
+### Turn it on
+
+If the archived disabled launchers exist in your user folder, restore them:
+
+```powershell
+Copy-Item "$env:USERPROFILE\start-hotturkey-silent.vbs.disabled" "$env:USERPROFILE\start-hotturkey-silent.vbs" -Force
+Copy-Item "$env:USERPROFILE\start-hotturkey-if-needed.ps1.disabled" "$env:USERPROFILE\start-hotturkey-if-needed.ps1" -Force
+```
+
+Create or update the scheduled task:
+
+```powershell
+$action = New-ScheduledTaskAction `
+  -Execute "wscript.exe" `
+  -Argument "`"$env:USERPROFILE\start-hotturkey-silent.vbs`""
+
+$trigger = New-ScheduledTaskTrigger -Daily -At 12:00
+$trigger.Repetition.Interval = "PT30M"
+
+Register-ScheduledTask `
+  -TaskName "Ht start" `
+  -Action $action `
+  -Trigger $trigger `
+  -Description "Start HotTurkey if it is not already running" `
+  -Force
+```
+
+If the task already exists but is disabled:
+
+```powershell
+Enable-ScheduledTask -TaskName "Ht start"
+```
+
+### Turn it off without losing the scripts
+
+Disable or remove the scheduled task:
+
+```powershell
+Disable-ScheduledTask -TaskName "Ht start"
+```
+
+If Windows requires elevation, open PowerShell as Administrator and run:
+
+```powershell
+Unregister-ScheduledTask -TaskName "Ht start" -Confirm:$false
+```
+
+To keep the scheduler entry but prevent HotTurkey from starting, archive the
+real scripts and leave a no-op launcher in place:
+
+```powershell
+Move-Item "$env:USERPROFILE\start-hotturkey-silent.vbs" "$env:USERPROFILE\start-hotturkey-silent.vbs.disabled" -Force
+Move-Item "$env:USERPROFILE\start-hotturkey-if-needed.ps1" "$env:USERPROFILE\start-hotturkey-if-needed.ps1.disabled" -Force
+Set-Content "$env:USERPROFILE\start-hotturkey-silent.vbs" "' HotTurkey disabled`r`nWScript.Quit 0"
+```
+
+### Verify
+
+Check that the task repeats every 30 minutes and points at the VBS launcher:
+
+```powershell
+schtasks /Query /TN "Ht start" /XML | Select-String -Pattern "<Interval>|<Command>|<Arguments>"
+```
+
+Expected key lines:
+
+```xml
+<Interval>PT30M</Interval>
+<Command>wscript.exe</Command>
+<Arguments>"C:\Users\sushi\start-hotturkey-silent.vbs"</Arguments>
+```
+
+---
+
 ## CLI
 
 With PATH: `ht <subcommand>` or `hotturkey <subcommand>` from anywhere.
@@ -133,6 +217,30 @@ Without PATH: `python -m hotturkey.cli <subcommand>` from the project folder.
 | `ht lesslog` | Switch back to INFO logging |
 
 Changes apply on the next poll cycle.
+
+### Game detection
+
+HotTurkey refreshes its installed-game catalog when it starts, then about every 5 minutes while running. The catalog scan is intentionally slower than the foreground poll because it reads launcher files from disk.
+
+Supported catalog sources:
+
+| Source | Detection data |
+|--------|----------------|
+| Steam | Steam library folders and `steamapps\appmanifest_*.acf` |
+| Epic Games Launcher | `%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests\*.item` |
+| Legendary / Heroic | `%USERPROFILE%\.config\legendary\installed.json` and `%APPDATA%\legendary\installed.json` |
+
+During each poll, HotTurkey reads the focused window's process, gets the executable path when Windows allows it, and checks whether that path is inside one of the cataloged install folders. If the path is blocked, it falls back to known launch exe names, Steam ancestry/env detection, and manual overrides.
+
+Use `ht focus --wait 3` while a game is focused to see which detector fired.
+
+### Tracked targets config
+
+The committed sample is [hotturkey/tracked_targets.sample.json](hotturkey/tracked_targets.sample.json). It contains the starter browser keywords, bad-site keywords, bonus/good-site keywords, bonus app keywords, social keywords, and known game exe fallbacks.
+
+Your real local file is `%USERPROFILE%\.hotturkey\tracked_targets.json`. HotTurkey creates it from the sample when it does not exist, then uses the local file after that. If a key is missing from the local file, that key inherits the sample value; if a key is present as `[]`, HotTurkey treats it as intentionally empty.
+
+`tracked_targets.json` is gitignored for repo-local experiments, and the state-dir copy is outside the repo anyway.
 
 ### History & charts
 

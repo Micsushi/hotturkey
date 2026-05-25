@@ -12,12 +12,14 @@ class TrackedTargetsTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.orig_state_dir = config.STATE_DIR
         self.orig_targets_file = config.TRACKED_TARGETS_FILE
+        self.orig_packaged_sample = tracked_targets._PACKAGED_SAMPLE
         config.STATE_DIR = self.tmp.name
         tracked_targets.refresh_tracked_targets_cache()
 
     def tearDown(self):
         config.STATE_DIR = self.orig_state_dir
         config.TRACKED_TARGETS_FILE = self.orig_targets_file
+        tracked_targets._PACKAGED_SAMPLE = self.orig_packaged_sample
         tracked_targets.refresh_tracked_targets_cache()
         self.tmp.cleanup()
 
@@ -52,6 +54,31 @@ class TrackedTargetsTests(unittest.TestCase):
         self.assertEqual(targets["tracked_sites"], ["custom-video"])
         self.assertIn("brave", targets["browsers"])
         self.assertIn("pioneergame.exe", targets["known_game_executables"])
+
+    def test_missing_user_file_installs_from_packaged_sample(self):
+        sample = self._write_targets("tracked_targets.sample.json", ["sample-video"])
+        tracked_targets._PACKAGED_SAMPLE = sample
+        config.TRACKED_TARGETS_FILE = os.path.join(
+            self.tmp.name, "tracked_targets.json"
+        )
+
+        targets = tracked_targets.get_tracked_targets()
+
+        self.assertEqual(targets["tracked_sites"], ["sample-video"])
+        self.assertTrue(os.path.exists(config.TRACKED_TARGETS_FILE))
+        with open(config.TRACKED_TARGETS_FILE, encoding="utf-8") as handle:
+            written = json.load(handle)
+        self.assertEqual(written["tracked_sites"], ["sample-video"])
+
+    def test_user_file_with_actual_name_overrides_sample(self):
+        sample = self._write_targets("tracked_targets.sample.json", ["sample-video"])
+        actual = self._write_targets("tracked_targets.json", ["actual-video"])
+        tracked_targets._PACKAGED_SAMPLE = sample
+        config.TRACKED_TARGETS_FILE = actual
+
+        targets = tracked_targets.get_tracked_targets()
+
+        self.assertEqual(targets["tracked_sites"], ["actual-video"])
 
 
 if __name__ == "__main__":

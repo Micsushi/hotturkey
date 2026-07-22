@@ -1,5 +1,0 @@
-psutil
-pystray
-Pillow
-pywin32
-matplotlib>=3.5

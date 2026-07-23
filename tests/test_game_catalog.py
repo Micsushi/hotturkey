@@ -47,17 +47,19 @@ def test_scan_steam_games_reads_multiple_libraryfolders_paths(tmp_path):
     steamapps.mkdir(parents=True)
     lib_a = tmp_path / "LibraryA"
     lib_b = tmp_path / "LibraryB"
+    lib_a_vdf = str(lib_a).replace("\\", "\\\\")
+    lib_b_vdf = str(lib_b).replace("\\", "\\\\")
     (steamapps / "libraryfolders.vdf").write_text(
         f'''
 "libraryfolders"
 {{
     "0"
     {{
-        "path" "{str(lib_a).replace("\\", "\\\\")}"
+        "path" "{lib_a_vdf}"
     }}
     "1"
     {{
-        "path" "{str(lib_b).replace("\\", "\\\\")}"
+        "path" "{lib_b_vdf}"
     }}
 }}
 ''',

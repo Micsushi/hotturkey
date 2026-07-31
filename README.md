@@ -88,7 +88,7 @@ python -m hotturkey.cli run
 
 ## How to tell it's working
 
-A **tray icon** appears in the bottom-right of your taskbar. If you don't see it, click the **^** arrow in the system tray and look for a small white dot, that's HotTurkey. Would recommend that you drag it onto the taskbar so it stays visible.
+A **tray icon** appears in the bottom-right of your taskbar. If you don't see it, click the **^** arrow in the system tray and look for a small white dot. Drag it onto the taskbar to keep it visible.
 
 The icon changes color as budget drops: green → yellow → orange → red. Hover over it to see remaining time.
 
@@ -98,7 +98,7 @@ The icon changes color as budget drops: green → yellow → orange → red. Hov
 - **Show logs**: this is the best way to keep track of what is happening
 - **Quit**: stop HotTurkey
 
-**Restart**: If you run the start command again. Old instance exits, new one launches.
+**Restart**: Run the start command again. The old instance exits and the new one launches.
 
 ---
 

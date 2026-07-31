@@ -1,5 +1,3 @@
-# popup.py -- Spawns fullscreen red terminal popups when you're in overtime.
-
 import ctypes
 import os
 import random

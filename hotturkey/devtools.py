@@ -1,5 +1,3 @@
-# cli commands for development (lint, test, CI)
-
 from __future__ import annotations
 
 import subprocess

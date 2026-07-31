@@ -1,16 +1,8 @@
-# logger.py -- Sets up logging so output goes to both the terminal and a log file.
-# Logging convention: every line starts with [TAG] for easy grep/parsing.
-
 import logging
 import os
 
 from hotturkey.config import STATE_DIR, LOG_FILE, LOG_LEVEL_FILE
 
-# - Green for budget recovery
-# - Red for budget consumption
-# - Blue for budget full
-# - Pastel yellow for [COMMAND]
-# - Cyan for everything else
 GREEN = "\033[92m"
 RED = "\033[91m"
 BLUE = "\033[94m"
@@ -29,7 +21,6 @@ class ColorFormatter(logging.Formatter):
     """
 
     def format(self, record):
-        # Decide color based on the raw log message
         base_message = record.getMessage()
         color = None
         if "[COMMAND]" in base_message:
@@ -112,7 +103,6 @@ def setup_logger():
     return logger
 
 
-# This runs once when the module is first imported, creating a shared logger
 log = setup_logger()
 
 

@@ -1,5 +1,3 @@
-# App starts by launching the system tray icon on a background thread and the monitor loop on another.
-
 import os
 import subprocess
 import sys
@@ -32,11 +30,11 @@ from hotturkey.db import init_db
 _running = True
 _shutdown_reason = None
 
-# Mutex to make sure only one instance of the HotTurkey process can run at a time.
+# Named mutex prevents duplicate tray and monitor processes.
 _single_instance_mutex = None
 _MUTEX_NAME = "HotTurkeySingleton"
 
-# Per-instance shutdown event and PID file so new runs can signal the correct process to exit
+# New runs use the PID file to signal the active instance.
 _shutdown_event = None
 _PID_FILE = os.path.join(STATE_DIR, "run.pid")
 
@@ -84,37 +82,30 @@ def _monitor_loop_inner():
     while _running:
         loop_start = time.time()
 
-        # check for log level change command
         refresh_log_level_from_disk()
 
-        # reload state.json (budget commands, overrides, etc.)
         if check_and_clear_reload_flag():
             state = load_state()
             _reset_session_state(state)
             log.info("[COMMAND] state reloaded from disk.")
             _log_start_snapshot(state, event="reloaded")
 
-        # detect current activity and update budget/overtime
         t0 = time.time()
         update_budget(state)
         t1 = time.time()
 
-        # fullscreen overtime popups if needed
         t2 = time.time()
         check_and_trigger_popups(state)
         t3 = time.time()
 
-        # refresh tray icon color and tooltip
         t4 = time.time()
         update_tray_icon(state)
         t5 = time.time()
 
-        # update state on disk
         t6 = time.time()
         save_state(state)
         t7 = time.time()
 
-        # log time taken per step (will need to run "hotturkey morelog" to see these)
         loop_duration = time.time() - loop_start
         body_ms = loop_duration * 1000.0
         log.debug(
@@ -126,12 +117,10 @@ def _monitor_loop_inner():
             body_ms,
         )
 
-        # sleep until the next scheduled poll
         remaining = POLL_INTERVAL - loop_duration
         if remaining > 0:
             time.sleep(remaining)
 
-    # save and STOP event once the monitor loop exits.
     save_state(state)
     if _shutdown_reason != "restart":
         log_event("STOP", event="monitor_stopped", state="saved")
@@ -140,13 +129,10 @@ def _monitor_loop_inner():
 def main():
     global _running, _single_instance_mutex, _shutdown_event
 
-    # try to acquire the mutex
     _single_instance_mutex = win32event.CreateMutex(None, False, _MUTEX_NAME)
     last_error = win32api.GetLastError()
 
     if last_error == winerror.ERROR_ALREADY_EXISTS:
-        # another instance is running
-        # wait until it has released the mutex so we don't start a second tray/monitor.
         log.info("[COMMAND] start: app already running, requesting restart.")
         try:
             with open(_PID_FILE, "r") as f:
@@ -159,7 +145,7 @@ def main():
             log_event("START", event="could_not_signal", action="exiting")
             return
 
-        # wait until the old process has exited to release our handle and re-create the mutex
+        # Wait for the old instance to release the mutex.
         for _ in range(15):
             time.sleep(1)
             try:
@@ -176,7 +162,6 @@ def main():
 
     log.info("[COMMAND] start: app started.")
 
-    # create shutdown event for this process and record its PID.
     pid = os.getpid()
     os.makedirs(os.path.dirname(_PID_FILE), exist_ok=True)
     with open(_PID_FILE, "w") as f:
@@ -185,25 +170,20 @@ def main():
         None, False, False, f"HotTurkeyShutdown_{pid}"
     )
 
-    # tray "Quit" option clicked
     def on_quit():
         global _running
         _running = False
 
     icon = create_tray_icon(quit_callback=on_quit)
 
-    # start the monitor on a background thread.
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
     monitor_thread.start()
 
-    # run the tray icon on separate thread.
     icon_thread = threading.Thread(target=icon.run, daemon=True)
     icon_thread.start()
 
-    # main thread waits for Ctrl+C or a shutdown request.
     try:
         while _running:
-            # Wait up to 500ms for the shutdown event.
             if _shutdown_event is not None:
                 wait_result = win32event.WaitForSingleObject(_shutdown_event, 500)
                 if wait_result == win32event.WAIT_OBJECT_0:
@@ -217,7 +197,6 @@ def main():
     except KeyboardInterrupt:
         log_event("STOP", event="ctrl_c")
 
-    # shutting down
     _running = False
     icon.stop()
     monitor_thread.join(timeout=10)
@@ -227,8 +206,7 @@ def main():
 
 def launch():
     """Start HotTurkey from the command line in the background."""
-    # If not already the detached background process, spawn one and exit.
-    # we use 2 processes so that we can close the terminal and the process will still run
+    # Detach so the terminal can close.
     if os.environ.get("HOTTURKEY_DETACHED") != "1":
         env = os.environ.copy()
         env["HOTTURKEY_DETACHED"] = "1"

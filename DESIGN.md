@@ -53,26 +53,28 @@ components:
 
 ## Overview
 
-Two UI surfaces. One exists. One is planned.
+The current UI is a fullscreen PowerShell warning and a system tray icon. A
+settings and history dashboard is planned.
 
-**Existing : Terminal popup:**
-Fullscreen PowerShell window. DarkRed background, white text. Shows when overtime is detected. Must be impossible to ignore. No subtlety.
+**Terminal popup:** DarkRed background with white text. It appears during
+overtime and should be visually forceful and difficult to ignore.
 
-**Planned : Settings/history dashboard:**
-If a settings or history viewer is ever built, use the Foundry warm-dark base (tokens prefixed `future-` above are the target). A tray menu and optional system dialog are also acceptable alternatives to a full GUI.
+**Planned dashboard:** Use the Foundry warm-dark base defined by the `future-`
+tokens above. A tray menu or system dialog is also acceptable.
 
 ## Popup Design
 
-The popup is a fullscreen PowerShell terminal window. No HTML, no widgets : pure console text.
+The popup is a fullscreen PowerShell terminal window. It uses console text
+instead of HTML or widgets.
 
 Design rules for popup content:
-- **Background:** `DarkRed` (PowerShell color name) : bright enough to break through game fullscreen
-- **Text:** `White` : maximum contrast
+- **Background:** `DarkRed` (PowerShell color name), bright enough to break through game fullscreen
+- **Text:** `White` for maximum contrast
 - **Layout:** padded lines to fill terminal width, centered message block
 - **Content:** overtime duration, escalation level, recovery time, one random message from pool, optional ASCII art
-- **Escalation levels:** higher levels = more alarming message content (not more color : color is always DarkRed)
+- **Escalation levels:** higher levels use more alarming messages; the color remains DarkRed
 - **No animation, no sound.** The visual interrupt is sufficient.
-- Do not add a "dismiss countdown" : user presses any key to close.
+- Do not add a dismiss countdown; the user presses any key to close.
 
 Popup line format:
 ```
@@ -97,20 +99,15 @@ If a GUI settings screen is added (web, tkinter, or similar), follow these princ
 - Use Foundry warm-dark palette (the `future-*` tokens above)
 - Show: tracked apps list, daily budgets, session history chart, current state at a glance
 - Session chart: bar chart, accent color (`#CC5F2A`) for used time, muted for remaining
-- Never use red for non-overtime states : red is reserved for the popup only
+- Never use red for non-overtime states; red is reserved for the popup only
 - Tray icon tooltip should show current budget remaining in plain text
 
-## Do's and Don'ts
+## Constraints
 
-**Do:**
 - Popup must be DarkRed/White. Never soften the interrupt with amber or gray.
 - All duration values: `HH:MM` or `Xh Ym` format, monospace.
 - Escalation should change message tone, not color scheme.
 - Future GUI: warm dark, single accent, no gradients.
-
-**Don't:**
-- No HTML/CSS for the current popup : it's a PowerShell terminal. Don't add a web renderer.
-- No animations on popup content : static text only.
-- No "snooze" UI element : the popup enforces, it does not negotiate.
-- No cold blue/gray/indigo in any future UI : this app is about heat and urgency.
-- No dark-mode toggle : Foundry base is dark-only.
+- Do not add HTML/CSS, animation, snooze controls, or a web renderer to the current popup.
+- Do not use cold blue, gray, or indigo in a future UI.
+- Do not add a dark-mode toggle; the Foundry base is dark-only.

@@ -64,7 +64,7 @@ def _build_pie(fig, ax, row):
         startangle=90,
         counterclock=False,
     )
-    ax.set_title(f"Daily breakdown — {row['date']}  (total {_fmt_hm(total)})")
+    ax.set_title(f"Daily breakdown - {row['date']}  (total {_fmt_hm(total)})")
 
     annot = ax.annotate(
         "",
@@ -186,7 +186,7 @@ def show_pie(rows, pie_date=None):
     fig, ax = plt.subplots(figsize=(7, 6))
     _build_pie(fig, ax, pie_row)
     try:
-        fig.canvas.manager.set_window_title("HotTurkey — Pie chart")
+        fig.canvas.manager.set_window_title("HotTurkey - Pie chart")
     except AttributeError:
         pass
 
@@ -207,7 +207,7 @@ def show_bar(rows):
     _build_bar(fig, ax, rows)
     fig.tight_layout()
     try:
-        fig.canvas.manager.set_window_title("HotTurkey — Bar chart")
+        fig.canvas.manager.set_window_title("HotTurkey - Bar chart")
     except AttributeError:
         pass
 
@@ -249,7 +249,7 @@ def show_both(rows, pie_date=None):
 
     fig.tight_layout()
     try:
-        fig.canvas.manager.set_window_title("HotTurkey — Activity charts")
+        fig.canvas.manager.set_window_title("HotTurkey - Activity charts")
     except AttributeError:
         pass
 

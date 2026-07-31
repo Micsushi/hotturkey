@@ -1,5 +1,3 @@
-# Enumerate visible top-level Win32 windows for CLI tooling.
-
 from __future__ import annotations
 
 import ctypes

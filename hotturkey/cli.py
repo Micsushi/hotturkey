@@ -1,5 +1,3 @@
-# cli commands for the user to use
-
 import argparse
 import json
 import os
@@ -722,13 +720,6 @@ def main():
         "minutes", type=float, help="Total minutes of budget to allow"
     )
 
-    # Temporarily disable the 'reset' command. Keeping the handler defined so we can
-    # re-enable this later without changing behavior elsewhere.
-    # subparsers.add_parser(
-    #     "reset",
-    #     help="Reset all state to default (full budget, zero overtime, extra today cleared)",
-    # )
-
     subparsers.add_parser(
         "run", help="Start HotTurkey (tray + monitor) in the background"
     )
@@ -807,9 +798,6 @@ def main():
         handle_extra(args.minutes)
     elif args.command == "set":
         handle_set(args.minutes)
-    # 'reset' command is currently disabled.
-    # elif args.command == "reset":
-    #     handle_reset()
     elif args.command == "run":
         handle_run()
     elif args.command == "stop":

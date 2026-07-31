@@ -1,6 +1,3 @@
-# monitor.py -- The brain of the app.
-# Detects what is focused, then consumes or recovers budget accordingly
-
 import psutil
 import win32gui
 import win32process
@@ -41,9 +38,7 @@ from hotturkey.state import (
     load_manual_activity_overrides,
 )
 
-# Names (lowercase) of executables that are currently detected as Steam descendants.
-# This is intentionally NOT a historical "learned forever" list, to avoid misclassifying
-# unrelated apps (e.g. browsers) that were once launched via Steam.
+# Refreshed from active Steam descendants to avoid stale classifications.
 _KNOWN_STEAM_GAME_NAMES = set()
 _BUDGET_BAR_WIDTH = 16
 _was_afk = False
@@ -387,7 +382,6 @@ def foreground_diagnostics_report(state) -> str:
     return "\n".join(lines)
 
 
-# Should look into something better than this
 def detect_tracked_site_focused(foreground_title, tracked_sites, tracked_browsers):
     title_lower = foreground_title.lower()
     for site in tracked_sites:

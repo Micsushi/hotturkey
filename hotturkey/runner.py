@@ -1,6 +1,3 @@
-# runner.py -- Launches the HotTurkey background process.
-# Called by cli.py when the user runs "hotturkey run".
-
 import os
 import subprocess
 import sys

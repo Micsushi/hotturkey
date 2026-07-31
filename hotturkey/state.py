@@ -1,6 +1,3 @@
-# state.py -- Holds all the data the app needs to remember, and saves/loads it as JSON.
-# The AppState object gets passed around between the monitor, popup, and tray modules.
-
 import json
 import os
 import time
